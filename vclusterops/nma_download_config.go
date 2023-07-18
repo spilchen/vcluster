@@ -16,6 +16,7 @@
 package vclusterops
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -73,34 +74,36 @@ func (op *NMADownloadConfigOp) setupClusterHTTPRequest(hosts []string) {
 	}
 }
 
-func (op *NMADownloadConfigOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *NMADownloadConfigOp) Prepare(execContext *OpEngineExecContext) error {
 	execContext.dispatcher.Setup(op.hosts)
 	op.setupClusterHTTPRequest(op.hosts)
 
-	return MakeClusterOpResultPass()
+	return nil
 }
 
-func (op *NMADownloadConfigOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *NMADownloadConfigOp) Execute(execContext *OpEngineExecContext) error {
 	if err := op.execute(execContext); err != nil {
-		return MakeClusterOpResultException()
+		return err
 	}
 
 	return op.processResult(execContext)
 }
 
-func (op *NMADownloadConfigOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *NMADownloadConfigOp) Finalize(execContext *OpEngineExecContext) error {
+	return nil
 }
 
-func (op *NMADownloadConfigOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *NMADownloadConfigOp) processResult(execContext *OpEngineExecContext) error {
+	var allErrs error
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
 		if result.isPassing() {
 			// The content of config file will be stored as content of the response
 			*op.fileContent = result.content
-			return MakeClusterOpResultPass()
+			return nil
 		}
+		allErrs = errors.Join(allErrs, result.err)
 	}
 
-	return MakeClusterOpResultFail()
+	return errors.Join(allErrs, fmt.Errorf("could not find a host with a passing result"))
 }

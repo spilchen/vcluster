@@ -17,9 +17,8 @@ package vclusterops
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-
-	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
 type NMAUploadConfigOp struct {
@@ -94,31 +93,31 @@ func (op *NMAUploadConfigOp) setupClusterHTTPRequest(hosts []string) {
 	}
 }
 
-func (op *NMAUploadConfigOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *NMAUploadConfigOp) Prepare(execContext *OpEngineExecContext) error {
 	err := op.setupRequestBody(op.hosts)
 	if err != nil {
-		return MakeClusterOpResultException()
+		return err
 	}
 	execContext.dispatcher.Setup(op.hosts)
 	op.setupClusterHTTPRequest(op.hosts)
 
-	return MakeClusterOpResultPass()
+	return nil
 }
 
-func (op *NMAUploadConfigOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *NMAUploadConfigOp) Execute(execContext *OpEngineExecContext) error {
 	if err := op.execute(execContext); err != nil {
-		return MakeClusterOpResultException()
+		return err
 	}
 
 	return op.processResult(execContext)
 }
 
-func (op *NMAUploadConfigOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *NMAUploadConfigOp) Finalize(execContext *OpEngineExecContext) error {
+	return nil
 }
 
-func (op *NMAUploadConfigOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
-	success := true
+func (op *NMAUploadConfigOp) processResult(execContext *OpEngineExecContext) error {
+	var allErrs error
 
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
@@ -127,22 +126,19 @@ func (op *NMAUploadConfigOp) processResult(execContext *OpEngineExecContext) Clu
 			// {"destination":"/data/vcluster_test_db/v_vcluster_test_db_node0003_catalog/vertica.conf"}
 			responseObj, err := op.parseAndCheckMapResponse(host, result.content)
 			if err != nil {
-				vlog.LogPrintError("[%s] fail to parse result on host %s, details: %w", op.name, host, err)
-				success = false
+				err = fmt.Errorf("[%s] fail to parse result on host %s, details: %w", op.name, host, err)
+				allErrs = errors.Join(allErrs, err)
 				continue
 			}
 			_, ok := responseObj["destination"]
 			if !ok {
-				vlog.LogError(`[%s] response does not contain field "destination"`, op.name)
-				success = false
+				err = fmt.Errorf(`[%s] response does not contain field "destination"`, op.name)
+				allErrs = errors.Join(allErrs, err)
 			}
 		} else {
-			success = false
+			allErrs = errors.Join(allErrs, result.err)
 		}
 	}
 
-	if success {
-		return MakeClusterOpResultPass()
-	}
-	return MakeClusterOpResultFail()
+	return allErrs
 }

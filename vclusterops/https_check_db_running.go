@@ -38,6 +38,7 @@ type OpType int
 const (
 	CreateDB OpType = iota
 	StopDB
+	StartDB
 )
 
 func (op OpType) String() string {
@@ -46,6 +47,8 @@ func (op OpType) String() string {
 		return "Create DB"
 	case StopDB:
 		return "Stop DB"
+	case StartDB:
+		return "Start DB"
 	}
 	return "unknown operation"
 }
@@ -128,10 +131,11 @@ func (op *HTTPCheckRunningDBOp) isDBRunningOnHost(host string,
 	nodeList, ok := responseObj["node_list"]
 	if !ok {
 		// hanging HTTPS service thread
-		if op.opType == CreateDB {
+		switch op.opType {
+		case CreateDB:
 			msg = fmt.Sprintf("[%s] Detected HTTPS service running on host %s, please stop the HTTPS service before creating a new database",
 				op.name, host)
-		} else if op.opType == StopDB {
+		case StopDB, StartDB:
 			msg = fmt.Sprintf("[%s] Detected HTTPS service running on host %s", op.name, host)
 		}
 		return false, msg, nil
@@ -221,9 +225,11 @@ func (op *HTTPCheckRunningDBOp) processResult(execContext *OpEngineExecContext) 
 	}
 
 	vlog.LogPrintInfoln(msg)
-	if op.opType == CreateDB {
+
+	switch op.opType {
+	case CreateDB:
 		vlog.LogPrintInfoln("Aborting database creation")
-	} else if op.opType == StopDB {
+	case StopDB, StartDB:
 		vlog.LogPrintInfoln("The database has not been down yet")
 	}
 	return allErrs

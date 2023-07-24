@@ -79,11 +79,6 @@ func (options *VAddSubclusterOptions) validateRequiredOptions() error {
 	if *options.SCName == "" {
 		return fmt.Errorf("must specify a subcluster name")
 	}
-	err = util.ValidateName(*options.SCName, "subcluster")
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -103,10 +98,6 @@ func (options *VAddSubclusterOptions) validateExtraOptions() error {
 	}
 
 	if *options.CloneSC != "" {
-		err := util.ValidateName(*options.CloneSC, "clone subcluster")
-		if err != nil {
-			return err
-		}
 		// TODO remove this log after we supported subcluster clone
 		vlog.LogPrintWarningln("option CloneSC is not implemented yet so it will be ignored")
 	}
@@ -215,7 +206,7 @@ func (vcc *VClusterCommands) VAddSubcluster(options *VAddSubclusterOptions) erro
 
 	instructions, err := produceAddSubclusterInstructions(&addSubclusterInfo, options)
 	if err != nil {
-		vlog.LogPrintError("fail to produce instructions, %w", err)
+		vlog.LogPrintError("fail to produce instructions, %s", err)
 		return err
 	}
 
@@ -226,7 +217,7 @@ func (vcc *VClusterCommands) VAddSubcluster(options *VAddSubclusterOptions) erro
 	// Give the instructions to the VClusterOpEngine to run
 	runError := clusterOpEngine.Run()
 	if runError != nil {
-		vlog.LogPrintError("fail to add subcluster %s, %w", addSubclusterInfo.SCName, runError)
+		vlog.LogPrintError("fail to add subcluster %s, %s", addSubclusterInfo.SCName, runError)
 		return runError
 	}
 

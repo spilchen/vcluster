@@ -39,9 +39,9 @@ type CmdCreateDB struct {
 	CmdBase
 }
 
-func MakeCmdCreateDB() CmdCreateDB {
+func MakeCmdCreateDB() *CmdCreateDB {
 	// CmdCreateDB
-	newCmd := CmdCreateDB{}
+	newCmd := &CmdCreateDB{}
 
 	// parser, used to parse command-line flags
 	newCmd.parser = flag.NewFlagSet("create_db", flag.ExitOnError)
@@ -174,7 +174,7 @@ func (c *CmdCreateDB) Analyze() error {
 }
 
 func (c *CmdCreateDB) Run() error {
-	vlog.LogInfoln("Called method Run()")
+	vlog.LogInfo("[%s] Called method Run()", c.CommandType())
 	vcc := vclusterops.VClusterCommands{}
 	vdb, createError := vcc.VCreateDatabase(c.createDBOptions)
 	if createError != nil {
@@ -183,7 +183,7 @@ func (c *CmdCreateDB) Run() error {
 	// write cluster information to the YAML config file
 	err := vclusterops.WriteClusterConfig(&vdb, c.createDBOptions.ConfigDirectory)
 	if err != nil {
-		vlog.LogPrintWarning("fail to write config file, details: %w", err)
+		vlog.LogPrintWarning("fail to write config file, details: %s", err)
 	}
 	vlog.LogPrintInfo("Created a database with name [%s]", vdb.Name)
 	return nil

@@ -29,7 +29,7 @@ type NMADownloadConfigOp struct {
 
 func MakeNMADownloadConfigOp(
 	opName string,
-	nodeMap map[string]VCoordinationNode,
+	hostCatalogPath map[string]string,
 	bootstrapHosts []string,
 	endpoint string,
 	fileContent *string,
@@ -39,16 +39,6 @@ func MakeNMADownloadConfigOp(
 	nmaDownloadConfigOp.hosts = bootstrapHosts
 	nmaDownloadConfigOp.endpoint = endpoint
 	nmaDownloadConfigOp.fileContent = fileContent
-
-	nmaDownloadConfigOp.catalogPathMap = make(map[string]string)
-	for _, host := range bootstrapHosts {
-		vnode, ok := nodeMap[host]
-		if !ok {
-			msg := fmt.Errorf("[%s] fail to get catalog path from host %s", opName, host)
-			panic(msg)
-		}
-		nmaDownloadConfigOp.catalogPathMap[host] = vnode.CatalogPath
-	}
 
 	return nmaDownloadConfigOp
 }
@@ -75,6 +65,25 @@ func (op *NMADownloadConfigOp) setupClusterHTTPRequest(hosts []string) {
 }
 
 func (op *NMADownloadConfigOp) Prepare(execContext *OpEngineExecContext) error {
+	// If the host input is a nil value, we find the host with the highest catalog version to update the host input.
+	// Otherwise, we use the host input.
+	if op.hosts == nil {
+		hostsWithLatestCatalog := execContext.hostsWithLatestCatalog
+		if len(hostsWithLatestCatalog) == 0 {
+			return fmt.Errorf("could not find at least one host with the latest catalog")
+		}
+		hostWithHighestCatalog := hostsWithLatestCatalog[:1]
+		// update the host with the highest catalog
+		op.hosts = hostWithHighestCatalog
+	}
+	// Update the catalogPathMap for next download operation's steps from information of catalog editor
+	nmaVDB := execContext.nmaVDatabase
+	op.catalogPathMap = make(map[string]string)
+	err := updateCatalogPathMapFromCatalogEditor(op.hosts, &nmaVDB, op.catalogPathMap)
+	if err != nil {
+		return fmt.Errorf("failed to get catalog paths from catalog editor: %w", err)
+	}
+
 	execContext.dispatcher.Setup(op.hosts)
 	op.setupClusterHTTPRequest(op.hosts)
 

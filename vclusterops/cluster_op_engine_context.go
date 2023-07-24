@@ -16,11 +16,13 @@
 package vclusterops
 
 type OpEngineExecContext struct {
-	dispatcher      HTTPRequestDispatcher
-	networkProfiles map[string]NetworkProfile
-	nmaVDatabase    NmaVDatabase
-	upHosts         []string // a sorted host list that contains all up nodes
-	nodeStates      []NodeInfo
+	dispatcher             HTTPRequestDispatcher
+	networkProfiles        map[string]NetworkProfile
+	nmaVDatabase           NmaVDatabase
+	upHosts                []string // a sorted host list that contains all up nodes
+	nodeStates             []NodeInfo
+	defaultSCName          string // store the default subcluster name of the database
+	hostsWithLatestCatalog []string
 }
 
 func MakeOpEngineExecContext() OpEngineExecContext {

@@ -23,23 +23,29 @@ import (
 	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
-type HTTPCheckNodeStateOp struct {
+// HTTPCheckNodesExistOp defines an operation to get the
+// node states and check if some hosts are already part
+// of the database.
+type HTTPCheckNodesExistOp struct {
 	OpBase
 	OpHTTPBase
+	// The IP addresses of the hosts whose existence we want to check
+	targetHosts []string
 }
 
-func MakeHTTPCheckNodeStateOp(opName string,
+// MakeHTTPCheckNodesExistOp will make a https op that check if new nodes exists in current database
+func MakeHTTPCheckNodesExistOp(
 	hosts []string,
+	targetHosts []string,
 	useHTTPPassword bool,
 	userName string,
-	httpsPassword *string,
-) HTTPCheckNodeStateOp {
-	nodeStateChecker := HTTPCheckNodeStateOp{}
-	nodeStateChecker.name = opName
+	httpsPassword *string) HTTPCheckNodesExistOp {
+	nodeStateChecker := HTTPCheckNodesExistOp{}
+	nodeStateChecker.name = "HTTPCheckNodesExistOp"
 	// The hosts are the ones we are going to talk to.
-	// They can be a subset of the actual host information that we return,
-	// as if any of the hosts is responsive, spread can give us the info of all nodes
+	// as if any of the hosts is responsive, spread can give us the info of all nodes.
 	nodeStateChecker.hosts = hosts
+	nodeStateChecker.targetHosts = targetHosts
 	nodeStateChecker.useHTTPPassword = useHTTPPassword
 
 	util.ValidateUsernameAndPassword(useHTTPPassword, userName)
@@ -48,7 +54,7 @@ func MakeHTTPCheckNodeStateOp(opName string,
 	return nodeStateChecker
 }
 
-func (op *HTTPCheckNodeStateOp) setupClusterHTTPRequest(hosts []string) {
+func (op *HTTPCheckNodesExistOp) setupClusterHTTPRequest(hosts []string) {
 	op.clusterHTTPRequest = ClusterHTTPRequest{}
 	op.clusterHTTPRequest.RequestCollection = make(map[string]HostHTTPRequest)
 	op.setVersionToSemVar()
@@ -65,14 +71,14 @@ func (op *HTTPCheckNodeStateOp) setupClusterHTTPRequest(hosts []string) {
 	}
 }
 
-func (op *HTTPCheckNodeStateOp) Prepare(execContext *OpEngineExecContext) error {
+func (op *HTTPCheckNodesExistOp) Prepare(execContext *OpEngineExecContext) error {
 	execContext.dispatcher.Setup(op.hosts)
 	op.setupClusterHTTPRequest(op.hosts)
 
 	return nil
 }
 
-func (op *HTTPCheckNodeStateOp) Execute(execContext *OpEngineExecContext) error {
+func (op *HTTPCheckNodesExistOp) Execute(execContext *OpEngineExecContext) error {
 	if err := op.execute(execContext); err != nil {
 		return err
 	}
@@ -80,64 +86,63 @@ func (op *HTTPCheckNodeStateOp) Execute(execContext *OpEngineExecContext) error 
 	return op.processResult(execContext)
 }
 
-func (op *HTTPCheckNodeStateOp) processResult(execContext *OpEngineExecContext) error {
+func (op *HTTPCheckNodesExistOp) processResult(execContext *OpEngineExecContext) error {
 	var allErrs error
-	respondingNodeCount := 0
-
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
 
 		if result.IsUnauthorizedRequest() {
-			vlog.LogPrintError("[%s] unauthorized request: %s", op.name, result.content)
 			// return here because we assume that
 			// we will get the same error across other nodes
-			allErrs = errors.Join(allErrs, result.err)
-			return allErrs
+			return fmt.Errorf("[%s] unauthorized request: %w", op.name, result.err)
 		}
 
-		if !result.isPassing() {
-			// for any error, we continue to the next node
-			if result.IsInternalError() {
-				vlog.LogPrintError("[%s] internal error of the /nodes endpoint: %s", op.name, result.content)
-				// At internal error originated from the server, so its a
-				// response, just not a successful one.
-				respondingNodeCount++
-			}
-			allErrs = errors.Join(allErrs, result.err)
+		if result.err != nil {
+			err := fmt.Errorf("[%s] error of the /nodes endpoint: %w", op.name, result.err)
+			allErrs = errors.Join(allErrs, err)
+			// for any error, we use "continue" to try the next node
 			continue
 		}
 
 		// parse the /nodes endpoint response
-		respondingNodeCount++
 		nodesInfo := NodesInfo{}
 		err := op.parseAndCheckResponse(host, result.content, &nodesInfo)
 		if err != nil {
-			err = fmt.Errorf("[%s] fail to parse result on host %s: %w",
+			err = fmt.Errorf("[%s] fail to parse result on host %s, details: %w",
 				op.name, host, err)
 			allErrs = errors.Join(allErrs, err)
 			continue
 		}
-		// successful case, write the result into exec context
-		execContext.nodeStates = nodesInfo.NodeList
-		return nil
-	}
-
-	// If none of the requests succeed on any node, we
-	// can assume that all nodes are down.
-	if respondingNodeCount == 0 {
-		// this list is built for Go client
-		var nodeStates []NodeInfo
-		for _, host := range op.hosts {
-			nodeInfo := NodeInfo{}
-			nodeInfo.Address = host
-			nodeInfo.State = "DOWN"
-			nodeStates = append(nodeStates, nodeInfo)
+		// We check if any of the new nodes already exist in the database
+		if op.checkNodesExist(nodesInfo.NodeList) {
+			return errors.New("new node already exists in the database")
 		}
-		execContext.nodeStates = nodeStates
+		return nil
 	}
 	return allErrs
 }
 
-func (op *HTTPCheckNodeStateOp) Finalize(execContext *OpEngineExecContext) error {
+func (op *HTTPCheckNodesExistOp) Finalize(execContext *OpEngineExecContext) error {
 	return nil
+}
+
+// checkNodesExist return true if at least one of the new hosts
+// already exists in the database.
+func (op *HTTPCheckNodesExistOp) checkNodesExist(nodes []NodeInfo) bool {
+	// verify the new nodes do not exist in current database
+	hostSet := make(map[string]struct{})
+	for _, host := range op.targetHosts {
+		hostSet[host] = struct{}{}
+	}
+	dupHosts := []string{}
+	for _, host := range nodes {
+		if _, exist := hostSet[host.Address]; exist {
+			dupHosts = append(dupHosts, host.Address)
+		}
+	}
+	if len(dupHosts) == 0 {
+		return false
+	}
+	vlog.LogPrintError("[%s] new nodes %v already exist in the database", op.name, dupHosts)
+	return true
 }

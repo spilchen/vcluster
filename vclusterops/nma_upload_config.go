@@ -19,6 +19,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/vertica/vcluster/vclusterops/util"
+	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
 type NMAUploadConfigOp struct {
@@ -27,6 +30,9 @@ type NMAUploadConfigOp struct {
 	endpoint           string
 	fileContent        *string
 	hostRequestBodyMap map[string]string
+	sourceConfigHost   []string
+	newNodeHosts       []string
+	skipExecute        bool // This can be set during prepare if we determine no work is needed
 }
 
 type uploadConfigRequestData struct {
@@ -34,10 +40,21 @@ type uploadConfigRequestData struct {
 	Content     string `json:"content"`
 }
 
+// MakeNMAUploadConfigOp sets up the input parameters from the user for the upload operation.
+// To start the DB, insert a nil value for sourceConfigHost and newNodeHosts, and
+// provide a list of database hosts for hosts.
+// To create the DB, use the bootstrapHost value for sourceConfigHost, a nil value for newNodeHosts,
+// and provide a list of database hosts for hosts.
+// To add nodes to the DB, use the bootstrapHost value for sourceConfigHost, a list of newly added nodes
+// for newNodeHosts and provide a nil value for hosts.
 func MakeNMAUploadConfigOp(
 	opName string,
-	nodeMap map[string]VCoordinationNode,
-	newNodeHosts []string,
+	hostCatalogPath map[string]string, // map <host,catalogPath> e.g. <ip1:/data/{db_name}/v_{db_name}_node0001_catalog/>
+	sourceConfigHost []string, // source host for transferring configuration files, specifically, it is
+	// 1. the bootstrap host when creating the database
+	// 2. the host with the highest catalog version for starting a database or starting nodes
+	hosts []string, // list of hosts of database to participate in database
+	newNodeHosts []string, // list of new hosts is added to the database
 	endpoint string,
 	fileContent *string,
 ) NMAUploadConfigOp {
@@ -46,16 +63,9 @@ func MakeNMAUploadConfigOp(
 	nmaUploadConfigOp.endpoint = endpoint
 	nmaUploadConfigOp.fileContent = fileContent
 	nmaUploadConfigOp.catalogPathMap = make(map[string]string)
-	nmaUploadConfigOp.hosts = newNodeHosts
-
-	for _, host := range newNodeHosts {
-		vnode, ok := nodeMap[host]
-		if !ok {
-			msg := fmt.Errorf("[%s] fail to get catalog path from host %s", opName, host)
-			panic(msg)
-		}
-		nmaUploadConfigOp.catalogPathMap[host] = vnode.CatalogPath
-	}
+	nmaUploadConfigOp.hosts = hosts
+	nmaUploadConfigOp.sourceConfigHost = sourceConfigHost
+	nmaUploadConfigOp.newNodeHosts = newNodeHosts
 
 	return nmaUploadConfigOp
 }
@@ -94,7 +104,44 @@ func (op *NMAUploadConfigOp) setupClusterHTTPRequest(hosts []string) {
 }
 
 func (op *NMAUploadConfigOp) Prepare(execContext *OpEngineExecContext) error {
-	err := op.setupRequestBody(op.hosts)
+	if op.sourceConfigHost == nil {
+		//  if the host with the highest catalog version for starting a database or starting nodes is nil value
+		// 	we identify the hosts that need to be synchronized.
+		hostsWithLatestCatalog := execContext.hostsWithLatestCatalog
+		if len(hostsWithLatestCatalog) == 0 {
+			return fmt.Errorf("could not find at least one host with the latest catalog")
+		}
+		hostsNeedCatalogSync := util.SliceDiff(op.hosts, hostsWithLatestCatalog)
+		// Update the hosts that need to synchronize the catalog
+		op.hosts = hostsNeedCatalogSync
+		// If no hosts to upload, skip this operation. This can happen if all
+		// hosts have the latest catalog.
+		if len(op.hosts) == 0 {
+			vlog.LogInfo("no hosts require an upload, skipping the operation")
+			op.skipExecute = true
+			return nil
+		}
+	} else {
+		if op.newNodeHosts == nil {
+			// If the list of newly added hosts is null, the sourceConfigHost host will be the bootstrapHost input
+			// when creating the database
+			// we identify the hosts that need to be synchronized from bootstrapHost and list of hosts input
+			op.hosts = util.SliceDiff(op.hosts, op.sourceConfigHost)
+		} else {
+			// The hosts that need to be synchronized are the list of newly added hosts.
+			op.hosts = op.newNodeHosts
+		}
+	}
+
+	// Update the catalogPathMap for next upload operation's steps from information of catalog editor
+	nmaVDB := execContext.nmaVDatabase
+	op.catalogPathMap = make(map[string]string)
+	err := updateCatalogPathMapFromCatalogEditor(op.hosts, &nmaVDB, op.catalogPathMap)
+	if err != nil {
+		return fmt.Errorf("failed to get catalog paths from catalog editor: %w", err)
+	}
+
+	err = op.setupRequestBody(op.hosts)
 	if err != nil {
 		return err
 	}
@@ -105,6 +152,10 @@ func (op *NMAUploadConfigOp) Prepare(execContext *OpEngineExecContext) error {
 }
 
 func (op *NMAUploadConfigOp) Execute(execContext *OpEngineExecContext) error {
+	// Behave as a no-op if Prepare() determined there was nothing to do
+	if op.skipExecute {
+		return nil
+	}
 	if err := op.execute(execContext); err != nil {
 		return err
 	}

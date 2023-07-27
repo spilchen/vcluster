@@ -32,7 +32,6 @@ type NMAUploadConfigOp struct {
 	hostRequestBodyMap map[string]string
 	sourceConfigHost   []string
 	newNodeHosts       []string
-	skipExecute        bool // This can be set during prepare if we determine no work is needed
 }
 
 type uploadConfigRequestData struct {

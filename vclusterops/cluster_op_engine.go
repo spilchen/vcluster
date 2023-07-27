@@ -49,8 +49,12 @@ func (opEngine *VClusterOpEngine) Run() error {
 			return fmt.Errorf("prepare %s failed, details: %w", op.getName(), err)
 		}
 
+		err = op.loadCertsIfNeeded(opEngine.certs, findCertsInOptions)
+		if err != nil {
+			return fmt.Errorf("loadCertsIfNeeded for %s failed, details: %w", op.getName(), err)
+		}
+
 		// execute an instruction
-		op.loadCertsIfNeeded(opEngine.certs, findCertsInOptions)
 		op.logExecute()
 		err = op.Execute(&execContext)
 		if err != nil {

@@ -156,7 +156,7 @@ type ClusterOp interface {
 	logPrepare()
 	logExecute()
 	logFinalize()
-	loadCertsIfNeeded(certs *HTTPSCerts, findCertsInOptions bool)
+	loadCertsIfNeeded(certs *HTTPSCerts, findCertsInOptions bool) error
 }
 
 /* Cluster ops basic fields and functions
@@ -168,6 +168,7 @@ type OpBase struct {
 	name               string
 	hosts              []string
 	clusterHTTPRequest ClusterHTTPRequest
+	skipExecute        bool // This can be set during prepare if we determine no work is needed
 }
 
 type OpResponseMap map[string]string
@@ -227,14 +228,18 @@ func (op *OpBase) execute(execContext *OpEngineExecContext) error {
 }
 
 // if found certs in the options, we add the certs to http requests of each instruction
-func (op *OpBase) loadCertsIfNeeded(certs *HTTPSCerts, findCertsInOptions bool) {
+func (op *OpBase) loadCertsIfNeeded(certs *HTTPSCerts, findCertsInOptions bool) error {
 	if !findCertsInOptions {
-		return
+		return nil
+	}
+	// Can skip loading of certs if not going to perform an execute
+	if op.skipExecute {
+		return nil
 	}
 
 	// this step is executed after Prepare() so all http requests should be set up
 	if len(op.clusterHTTPRequest.RequestCollection) == 0 {
-		panic(fmt.Sprintf("[%s] has not set up a http request", op.name))
+		return fmt.Errorf(fmt.Sprintf("[%s] has not set up a http request, skipping cert loading", op.name))
 	}
 
 	for host := range op.clusterHTTPRequest.RequestCollection {
@@ -245,6 +250,7 @@ func (op *OpBase) loadCertsIfNeeded(certs *HTTPSCerts, findCertsInOptions bool) 
 		request.Certs.caCert = certs.caCert
 		op.clusterHTTPRequest.RequestCollection[host] = request
 	}
+	return nil
 }
 
 /* Sensitive fields in request body

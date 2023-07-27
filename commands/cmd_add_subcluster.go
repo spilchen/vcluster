@@ -17,7 +17,6 @@ package commands
 
 import (
 	"flag"
-	"fmt"
 
 	"github.com/vertica/vcluster/vclusterops"
 	"github.com/vertica/vcluster/vclusterops/util"
@@ -38,9 +37,9 @@ type CmdAddSubcluster struct {
 	scHostListStr        *string
 }
 
-func MakeCmdAddSubcluster() CmdAddSubcluster {
+func MakeCmdAddSubcluster() *CmdAddSubcluster {
 	// CmdAddSubcluster
-	newCmd := CmdAddSubcluster{}
+	newCmd := &CmdAddSubcluster{}
 
 	// parser, used to parse command-line flags
 	newCmd.parser = flag.NewFlagSet("db_add_subcluster", flag.ExitOnError)
@@ -89,12 +88,6 @@ func (c *CmdAddSubcluster) CommandType() string {
 }
 
 func (c *CmdAddSubcluster) Parse(inputArgv []string) error {
-	vlog.LogArgParse(&inputArgv)
-
-	if c.parser == nil {
-		return fmt.Errorf("unexpected nil - the parser was nil")
-	}
-
 	c.argv = inputArgv
 	err := c.ValidateParseArgv(c.CommandType())
 	if err != nil {
@@ -123,13 +116,7 @@ func (c *CmdAddSubcluster) Parse(inputArgv []string) error {
 // all validations of the arguments should go in here
 func (c *CmdAddSubcluster) validateParse() error {
 	vlog.LogInfoln("Called validateParse()")
-
-	err := c.ValidateParseBaseOptions(&c.addSubclusterOptions.DatabaseOptions)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return c.ValidateParseBaseOptions(&c.addSubclusterOptions.DatabaseOptions)
 }
 
 func (c *CmdAddSubcluster) Analyze() error {

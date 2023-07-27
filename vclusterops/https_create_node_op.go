@@ -16,10 +16,10 @@
 package vclusterops
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/vertica/vcluster/vclusterops/util"
-	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
 type HTTPCreateNodeOp struct {
@@ -28,17 +28,20 @@ type HTTPCreateNodeOp struct {
 	RequestParams map[string]string
 }
 
-func MakeHTTPCreateNodeOp(opName string, hosts []string, bootstrapHost []string,
+func MakeHTTPCreateNodeOp(hosts []string, bootstrapHost []string,
 	useHTTPPassword bool, userName string, httpsPassword *string,
-	vdb *VCoordinationDatabase) HTTPCreateNodeOp {
+	vdb *VCoordinationDatabase, scName string) HTTPCreateNodeOp {
 	createNodeOp := HTTPCreateNodeOp{}
-	createNodeOp.name = opName
+	createNodeOp.name = "HTTPCreateNodeOp"
 	createNodeOp.hosts = bootstrapHost
 	createNodeOp.RequestParams = make(map[string]string)
 	// HTTPS create node endpoint requires passing everything before node name
 	createNodeOp.RequestParams["catalog-prefix"] = vdb.CatalogPrefix + "/" + vdb.Name
 	createNodeOp.RequestParams["data-prefix"] = vdb.DataPrefix + "/" + vdb.Name
 	createNodeOp.RequestParams["hosts"] = util.ArrayToString(hosts, ",")
+	if scName != "" {
+		createNodeOp.RequestParams["subcluster"] = scName
+	}
 	createNodeOp.useHTTPPassword = useHTTPPassword
 
 	util.ValidateUsernameAndPassword(useHTTPPassword, userName)
@@ -79,30 +82,30 @@ func (op *HTTPCreateNodeOp) updateQueryParams(execContext *OpEngineExecContext) 
 	}
 }
 
-func (op *HTTPCreateNodeOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *HTTPCreateNodeOp) Prepare(execContext *OpEngineExecContext) error {
 	op.updateQueryParams(execContext)
 	execContext.dispatcher.Setup(op.hosts)
 	op.setupClusterHTTPRequest(op.hosts)
 
-	return MakeClusterOpResultPass()
+	return nil
 }
 
-func (op *HTTPCreateNodeOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *HTTPCreateNodeOp) Execute(execContext *OpEngineExecContext) error {
 	if err := op.execute(execContext); err != nil {
-		return MakeClusterOpResultException()
+		return err
 	}
 
 	return op.processResult(execContext)
 }
 
-func (op *HTTPCreateNodeOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *HTTPCreateNodeOp) Finalize(execContext *OpEngineExecContext) error {
+	return nil
 }
 
 type HTTPCreateNodeResponse map[string][]map[string]string
 
-func (op *HTTPCreateNodeOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
-	success := true
+func (op *HTTPCreateNodeOp) processResult(execContext *OpEngineExecContext) error {
+	var allErrs error
 
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
@@ -115,21 +118,18 @@ func (op *HTTPCreateNodeOp) processResult(execContext *OpEngineExecContext) Clus
 			err := op.parseAndCheckResponse(host, result.content, &responseObj)
 
 			if err != nil {
-				success = false
+				allErrs = errors.Join(allErrs, err)
 				continue
 			}
 			_, ok := responseObj["created_nodes"]
 			if !ok {
-				vlog.LogError(`[%s] response does not contain field "created_nodes"`, op.name)
-				success = false
+				err = fmt.Errorf(`[%s] response does not contain field "created_nodes"`, op.name)
+				allErrs = errors.Join(allErrs, err)
 			}
 		} else {
-			success = false
+			allErrs = errors.Join(allErrs, result.err)
 		}
 	}
 
-	if success {
-		return MakeClusterOpResultPass()
-	}
-	return MakeClusterOpResultFail()
+	return allErrs
 }

@@ -17,6 +17,7 @@ package vclusterops
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/vertica/vcluster/vclusterops/vlog"
@@ -38,10 +39,9 @@ type prepareDirectoriesRequestData struct {
 }
 
 func MakeNMAPrepareDirectoriesOp(
-	opName string,
 	hostNodeMap map[string]VCoordinationNode) (NMAPrepareDirectoriesOp, error) {
 	nmaPrepareDirectoriesOp := NMAPrepareDirectoriesOp{}
-	nmaPrepareDirectoriesOp.name = opName
+	nmaPrepareDirectoriesOp.name = "NMAPrepareDirectoriesOp"
 
 	err := nmaPrepareDirectoriesOp.setupRequestBody(hostNodeMap)
 	if err != nil {
@@ -91,27 +91,27 @@ func (op *NMAPrepareDirectoriesOp) setupClusterHTTPRequest(hosts []string) {
 	}
 }
 
-func (op *NMAPrepareDirectoriesOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *NMAPrepareDirectoriesOp) Prepare(execContext *OpEngineExecContext) error {
 	execContext.dispatcher.Setup(op.hosts)
 	op.setupClusterHTTPRequest(op.hosts)
 
-	return MakeClusterOpResultPass()
+	return nil
 }
 
-func (op *NMAPrepareDirectoriesOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *NMAPrepareDirectoriesOp) Execute(execContext *OpEngineExecContext) error {
 	if err := op.execute(execContext); err != nil {
-		return MakeClusterOpResultException()
+		return err
 	}
 
 	return op.processResult(execContext)
 }
 
-func (op *NMAPrepareDirectoriesOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *NMAPrepareDirectoriesOp) Finalize(execContext *OpEngineExecContext) error {
+	return nil
 }
 
-func (op *NMAPrepareDirectoriesOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
-	success := true
+func (op *NMAPrepareDirectoriesOp) processResult(execContext *OpEngineExecContext) error {
+	var allErrs error
 
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
@@ -125,15 +125,12 @@ func (op *NMAPrepareDirectoriesOp) processResult(execContext *OpEngineExecContex
 			//  '/opt/vertica/config/logrotate': 'created'}
 			_, err := op.parseAndCheckMapResponse(host, result.content)
 			if err != nil {
-				success = false
+				allErrs = errors.Join(allErrs, err)
 			}
 		} else {
-			success = false
+			allErrs = errors.Join(allErrs, result.err)
 		}
 	}
 
-	if success {
-		return MakeClusterOpResultPass()
-	}
-	return MakeClusterOpResultFail()
+	return allErrs
 }

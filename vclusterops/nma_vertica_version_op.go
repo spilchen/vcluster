@@ -31,9 +31,9 @@ type NMAVerticaVersionOp struct {
 	HostVersionMap     map[string]string
 }
 
-func MakeNMAVerticaVersionOp(opName string, hosts []string, sameVersion bool) NMAVerticaVersionOp {
+func MakeNMAVerticaVersionOp(hosts []string, sameVersion bool) NMAVerticaVersionOp {
 	nmaVerticaVersionOp := NMAVerticaVersionOp{}
-	nmaVerticaVersionOp.name = opName
+	nmaVerticaVersionOp.name = "NMAVerticaVersionOp"
 	nmaVerticaVersionOp.hosts = hosts
 	nmaVerticaVersionOp.RequireSameVersion = sameVersion
 	nmaVerticaVersionOp.HostVersionMap = map[string]string{}
@@ -53,23 +53,23 @@ func (op *NMAVerticaVersionOp) setupClusterHTTPRequest(hosts []string) {
 	}
 }
 
-func (op *NMAVerticaVersionOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *NMAVerticaVersionOp) Prepare(execContext *OpEngineExecContext) error {
 	execContext.dispatcher.Setup(op.hosts)
 	op.setupClusterHTTPRequest(op.hosts)
 
-	return MakeClusterOpResultPass()
+	return nil
 }
 
-func (op *NMAVerticaVersionOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *NMAVerticaVersionOp) Execute(execContext *OpEngineExecContext) error {
 	if err := op.execute(execContext); err != nil {
-		return MakeClusterOpResultException()
+		return err
 	}
 
 	return op.processResult(execContext)
 }
 
-func (op *NMAVerticaVersionOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *NMAVerticaVersionOp) Finalize(execContext *OpEngineExecContext) error {
+	return nil
 }
 
 type NMAVerticaVersionOpResponse map[string]string
@@ -116,34 +116,30 @@ func (op *NMAVerticaVersionOp) logResponseCollectVersions() error {
 	return nil
 }
 
-func (op *NMAVerticaVersionOp) logCheckVersionMatch() ClusterOpResult {
+func (op *NMAVerticaVersionOp) logCheckVersionMatch() error {
 	versionStr := NoVersion
 	for host, version := range op.HostVersionMap {
-		vlog.LogInfo("[%s] Host {%s}: version {s%}", op.name, host, version)
+		vlog.LogInfo("[%s] Host {%s}: version {%s}", op.name, host, version)
 		if version == "" {
-			vlog.LogError("[%s] No version collected for host: [%s]", op.name, host)
-			return MakeClusterOpResultFail()
+			return fmt.Errorf("[%s] No version collected for host: [%s]", op.name, host)
 		} else if versionStr == NoVersion {
 			// first time seeing a valid version, set it as the versionStr
 			versionStr = version
 		} else if version != versionStr && op.RequireSameVersion {
-			vlog.LogError("[%s] Found mismatched versions: [%s] and [%s]", op.name, versionStr, version)
-			return MakeClusterOpResultFail()
+			return fmt.Errorf("[%s] Found mismatched versions: [%s] and [%s]", op.name, versionStr, version)
 		}
 	}
 	// no version collected at all
 	if versionStr == NoVersion {
-		vlog.LogError("[%s] No version collected for all hosts", op.name)
-		return MakeClusterOpResultFail()
+		return fmt.Errorf("[%s] No version collected for all hosts", op.name)
 	}
-	return MakeClusterOpResultPass()
+	return nil
 }
 
-func (op *NMAVerticaVersionOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *NMAVerticaVersionOp) processResult(execContext *OpEngineExecContext) error {
 	err := op.logResponseCollectVersions()
 	if err != nil {
-		vlog.LogError(err.Error())
-		return MakeClusterOpResultFail()
+		return err
 	}
 	return op.logCheckVersionMatch()
 }

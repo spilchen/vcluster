@@ -19,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
@@ -36,8 +37,8 @@ type CmdHelp struct {
 	CmdBase
 }
 
-func MakeCmdHelp() CmdHelp {
-	newCmd := CmdHelp{}
+func MakeCmdHelp() *CmdHelp {
+	newCmd := &CmdHelp{}
 	newCmd.parser = flag.NewFlagSet("help", flag.ExitOnError)
 	newCmd.topic = newCmd.parser.String("topic", "", "The topic for more help")
 	return newCmd
@@ -72,6 +73,6 @@ func (c *CmdHelp) Analyze() error {
 	return nil
 }
 
-func (c *CmdHelp) Run() error {
+func (c *CmdHelp) Run(log logr.Logger) error {
 	return nil
 }

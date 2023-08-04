@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	"github.com/vertica/vcluster/vclusterops"
 	"github.com/vertica/vcluster/vclusterops/util"
 	"github.com/vertica/vcluster/vclusterops/vlog"
@@ -20,8 +21,8 @@ type CmdListAllNodes struct {
 	CmdBase
 }
 
-func MakeListAllNodes() CmdListAllNodes {
-	newCmd := CmdListAllNodes{}
+func MakeListAllNodes() *CmdListAllNodes {
+	newCmd := &CmdListAllNodes{}
 	newCmd.parser = flag.NewFlagSet("list_allnodes", flag.ExitOnError)
 
 	newCmd.hostListStr = newCmd.parser.String("hosts", "", "Comma-separated list of hosts to participate in database")
@@ -75,10 +76,12 @@ func (c *CmdListAllNodes) Analyze() error {
 	return nil
 }
 
-func (c *CmdListAllNodes) Run() error {
-	vlog.LogInfoln("Called method Run()")
+func (c *CmdListAllNodes) Run(log logr.Logger) error {
+	vcc := vclusterops.VClusterCommands{
+		Log: log.WithName(c.CommandType()),
+	}
+	vcc.Log.V(1).Info("Called method Run()")
 
-	vcc := vclusterops.VClusterCommands{}
 	nodeStates, err := vcc.VFetchNodeState(c.fetchNodeStateOptions)
 	if err != nil {
 		// if all nodes are down, the nodeStates list is not empty

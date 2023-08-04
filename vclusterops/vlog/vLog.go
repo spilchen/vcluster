@@ -22,6 +22,10 @@ import (
 	"sync"
 
 	"runtime/debug"
+
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
+	"go.uber.org/zap"
 )
 
 const (
@@ -36,6 +40,7 @@ const (
 
 type Vlogger struct {
 	LogPath string
+	Log     logr.Logger // Logging API to use for all logging calls
 }
 
 var (
@@ -44,7 +49,7 @@ var (
 )
 
 // return a singleton instance of the GlobalLogger
-func GetGlobalLogger() Vlogger {
+func GetGlobalLogger() *Vlogger {
 	/* if once.Do(f) is called multiple times,
 	 * only the first call will invoke f,
 	 * even if f has a different value in each invocation.
@@ -54,7 +59,7 @@ func GetGlobalLogger() Vlogger {
 		logInstance = makeGlobalLogger()
 	})
 
-	return logInstance
+	return &logInstance
 }
 
 func makeGlobalLogger() Vlogger {
@@ -85,20 +90,37 @@ func SetupOrDie(logFile string) {
 	logger.setupOrDie(logFile)
 }
 
-// expected to be used by both client lib and vcluster CLI
-// so have logFile string to allow different log files for the two use cases
+// setupOrDie will setup the logging for vcluster CLI. On exit, logger.Log will
+// be set.
 func (logger *Vlogger) setupOrDie(logFile string) {
-	logFileObj, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_RDWR, os.FileMode(LogPermission))
-	if err != nil {
-		fmt.Println(err)
+	// The vcluster library uses logr as the logging API. We use Uber's zap
+	// package to implement the logging API.
+	cfg := zap.Config{
+		Level:       zap.NewAtomicLevelAt(zap.InfoLevel),
+		Development: false,
+		// Sampling is enabled at 100:100, meaning that after the first 100 log
+		// entries with the same level and message in the same second, it will
+		// log every 100th entry with the same level and message in the same second.
+		Sampling: &zap.SamplingConfig{
+			Initial:    100,
+			Thereafter: 100,
+		},
+		Encoding:         "console",
+		EncoderConfig:    zap.NewDevelopmentEncoderConfig(),
+		OutputPaths:      []string{"stderr"},
+		ErrorOutputPaths: []string{"stderr"},
 	}
-	logger.logFatal(err)
-	log.Printf("Successfully opened file %s. Setting log output to that file.\n", logFileObj.Name())
-
-	// start to setup log and log start up msg
-	log.SetOutput(logFileObj)
-	startupErr := logger.logStartupMessage()
-	logger.logFatal(startupErr)
+	// If no log file is given, we just log to standard output
+	if logFile != "" {
+		cfg.OutputPaths = []string{logFile}
+	}
+	var err error
+	zapLg, err := cfg.Build()
+	if err != nil {
+		logger.logFatal(err)
+	}
+	logger.Log = zapr.NewLogger(zapLg)
+	logger.Log.Info("Successfully started logger", "logFile", logFile)
 }
 
 func LogStartupMessage() error {
@@ -206,7 +228,7 @@ func (logger *Vlogger) logDebug(info string, v ...any) {
 // log and print msg of the format "levelPrefix msg"
 // e.g., [Info] this is a sample log info
 func (logger *Vlogger) logPrintInternal(msg string) {
-	log.Println(msg)
+	logger.Log.Info(msg)
 	fmt.Println(msg)
 }
 

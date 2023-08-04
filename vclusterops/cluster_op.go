@@ -13,11 +13,18 @@
  limitations under the License.
 */
 
+// vclusterops is a Go library to administer a Vertica cluster with HTTP RESTful
+// interfaces. These interfaces are exposed through the Node Management Agent
+// (NMA) and an HTTPS service embedded in the server. With this library you can
+// perform administrator-level operations, including: creating a database,
+// scaling up/down, restarting the cluster, and stopping the cluster.
 package vclusterops
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/vertica/vcluster/vclusterops/util"
 	"github.com/vertica/vcluster/vclusterops/vlog"
 )
@@ -28,6 +35,8 @@ import (
 // ResultStatus is the data type for the status of
 // ClusterOpResult and HostHTTPResult
 type ResultStatus int
+
+var wrongCredentialErrMsg = []string{"Wrong password", "Wrong certificate"}
 
 const (
 	SUCCESS   ResultStatus = 0
@@ -63,12 +72,6 @@ const (
 	InternalErrorCode  = 500
 )
 
-// ClusterOpResult is used to hold the ClusterOp's result
-// at the steps of prepare, execute, and finalize
-type ClusterOpResult struct {
-	status ResultStatus
-}
-
 // HostHTTPResult is used to save result of an Adapter's sendRequest(...) function
 // it is the element of the adapter pool's channel
 type HostHTTPResult struct {
@@ -76,11 +79,32 @@ type HostHTTPResult struct {
 	statusCode int
 	host       string
 	content    string
-	errMsg     string
+	err        error // This is set if the http response ends in a failure scenario
 }
 
+// The HTTP response with a 401 status code can have several scenarios:
+// 1. Wrong password
+// 2. Wrong certificate
+// 3. The local node has not yet joined the cluster; the HTTP server will accept connections once the node joins the cluster.
+// HTTPCheckDBRunningOp in create_db need to check all scenarios to see any HTTP running
+// For HTTPSPollNodeStateOp in start_db, it requires only handling the first and second scenarios
 func (hostResult *HostHTTPResult) IsUnauthorizedRequest() bool {
 	return hostResult.statusCode == UnauthorizedCode
+}
+
+// check only password and certificate for start_db
+func (hostResult *HostHTTPResult) IsPasswordandCertificateError() bool {
+	if !hostResult.IsUnauthorizedRequest() {
+		return false
+	}
+	resultString := fmt.Sprintf("%v", hostResult)
+	for _, msg := range wrongCredentialErrMsg {
+		if strings.Contains(resultString, msg) {
+			vlog.LogError("the user has provided %s", msg)
+			return true
+		}
+	}
+	return false
 }
 
 func (hostResult *HostHTTPResult) IsInternalError() bool {
@@ -94,32 +118,8 @@ func (hostResult *HostHTTPResult) IsHTTPRunning() bool {
 	return false
 }
 
-func MakeClusterOpResultPass() ClusterOpResult {
-	return ClusterOpResult{status: SUCCESS}
-}
-
-func MakeClusterOpResultFail() ClusterOpResult {
-	return ClusterOpResult{status: FAILURE}
-}
-
-func MakeClusterOpResultException() ClusterOpResult {
-	return ClusterOpResult{status: EXCEPTION}
-}
-
-func (clusterOpResult *ClusterOpResult) isPassing() bool {
-	return clusterOpResult.status == SUCCESS
-}
-
-func (clusterOpResult *ClusterOpResult) isFailing() bool {
-	return clusterOpResult.status == FAILURE
-}
-
-func (clusterOpResult *ClusterOpResult) isException() bool {
-	return clusterOpResult.status == EXCEPTION
-}
-
 func (hostResult *HostHTTPResult) isPassing() bool {
-	return hostResult.status == SUCCESS
+	return hostResult.err == nil
 }
 
 func (hostResult *HostHTTPResult) isFailing() bool {
@@ -149,15 +149,16 @@ func (status ResultStatus) getStatusString() string {
 type ClusterOp interface {
 	getName() string
 	setupClusterHTTPRequest(hosts []string)
-	Prepare(execContext *OpEngineExecContext) ClusterOpResult
-	Execute(execContext *OpEngineExecContext) ClusterOpResult
-	Finalize(execContext *OpEngineExecContext) ClusterOpResult
-	processResult(execContext *OpEngineExecContext) ClusterOpResult
+	Prepare(execContext *OpEngineExecContext) error
+	Execute(execContext *OpEngineExecContext) error
+	Finalize(execContext *OpEngineExecContext) error
+	processResult(execContext *OpEngineExecContext) error
 	logResponse(host string, result HostHTTPResult)
 	logPrepare()
 	logExecute()
 	logFinalize()
-	loadCertsIfNeeded(certs *HTTPSCerts, findCertsInOptions bool)
+	loadCertsIfNeeded(certs *HTTPSCerts, findCertsInOptions bool) error
+	isSkipExecute() bool
 }
 
 /* Cluster ops basic fields and functions
@@ -169,6 +170,7 @@ type OpBase struct {
 	name               string
 	hosts              []string
 	clusterHTTPRequest ClusterHTTPRequest
+	skipExecute        bool // This can be set during prepare if we determine no work is needed
 }
 
 type OpResponseMap map[string]string
@@ -180,7 +182,7 @@ func (op *OpBase) getName() string {
 func (op *OpBase) parseAndCheckResponse(host, responseContent string, responseObj any) error {
 	err := util.GetJSONLogErrors(responseContent, &responseObj, op.name)
 	if err != nil {
-		vlog.LogError("[%s] fail to parse response on host %s, detail: %w", op.name, host, err)
+		vlog.LogError("[%s] fail to parse response on host %s, detail: %s", op.name, host, err)
 		return err
 	}
 	vlog.LogInfo("[%s] JSON response from %s is %+v\n", op.name, host, responseObj)
@@ -228,14 +230,14 @@ func (op *OpBase) execute(execContext *OpEngineExecContext) error {
 }
 
 // if found certs in the options, we add the certs to http requests of each instruction
-func (op *OpBase) loadCertsIfNeeded(certs *HTTPSCerts, findCertsInOptions bool) {
+func (op *OpBase) loadCertsIfNeeded(certs *HTTPSCerts, findCertsInOptions bool) error {
 	if !findCertsInOptions {
-		return
+		return nil
 	}
 
 	// this step is executed after Prepare() so all http requests should be set up
 	if len(op.clusterHTTPRequest.RequestCollection) == 0 {
-		panic(fmt.Sprintf("[%s] has not set up a http request", op.name))
+		return fmt.Errorf("[%s] has not set up a http request", op.name)
 	}
 
 	for host := range op.clusterHTTPRequest.RequestCollection {
@@ -246,6 +248,16 @@ func (op *OpBase) loadCertsIfNeeded(certs *HTTPSCerts, findCertsInOptions bool) 
 		request.Certs.caCert = certs.caCert
 		op.clusterHTTPRequest.RequestCollection[host] = request
 	}
+	return nil
+}
+
+// isSkipExecute will check state to see if the Execute() portion of the
+// operation should be skipped. Some operations can choose to implement this if
+// they can only determine at runtime where the operation is needed. One
+// instance of this is the nma_upload_config.go. If all nodes already have the
+// latest catalog information, there is nothing to be done during execution.
+func (op *OpBase) isSkipExecute() bool {
+	return op.skipExecute
 }
 
 /* Sensitive fields in request body
@@ -278,7 +290,9 @@ type OpHTTPBase struct {
 
 // we may add some common functions for OpHTTPBase here
 
-// VClusterCommands is for vcluster-ops library user to do mocking test in their program
-// The user can mock VCreateDatabase, VStopDatabase ... in their unit tests
+// VClusterCommands is struct for all top-level admin commands (e.g. create db,
+// add node, etc.). This is used to pass state around for the various APIs. We
+// also use it for mocking in our unit test.
 type VClusterCommands struct {
+	Log logr.Logger
 }

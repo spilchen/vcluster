@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/go-logr/logr"
 	"github.com/vertica/vcluster/vclusterops"
 	"github.com/vertica/vcluster/vclusterops/util"
 	"github.com/vertica/vcluster/vclusterops/vlog"
@@ -39,8 +40,8 @@ type CmdInit struct {
 	ConfigHandler
 }
 
-func MakeCmdInit() CmdInit {
-	newCmd := CmdInit{}
+func MakeCmdInit() *CmdInit {
+	newCmd := &CmdInit{}
 	newCmd.parser = flag.NewFlagSet("init", flag.ExitOnError)
 	newCmd.directory = newCmd.parser.String(
 		"directory",
@@ -93,7 +94,7 @@ func (c *CmdInit) Analyze() error {
 	return nil
 }
 
-func (c *CmdInit) Run() error {
+func (c *CmdInit) Run(log logr.Logger) error {
 	configFilePath := filepath.Join(*c.directory, vclusterops.ConfigFileName)
 
 	// check config file existence

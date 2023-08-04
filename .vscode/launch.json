@@ -9,6 +9,14 @@
             "type": "go",
             "request": "launch",
             "mode": "test",
+            "program": "${workspaceFolder}/vclusterops"
+        },
+        {
+            "name": "commands",
+            "type": "go",
+            "request": "launch",
+            "mode": "test",
+            "program": "${workspaceFolder}/commands"
         }
     ]
 }

@@ -393,6 +393,8 @@ func (opt *VCreateDatabaseOptions) ValidateAnalyzeOptions() error {
 }
 
 func (vcc *VClusterCommands) VCreateDatabase(options *VCreateDatabaseOptions) (VCoordinationDatabase, error) {
+	vcc.Log.Info("starting VCreateDatabase")
+
 	/*
 	 *   - Produce Instructions
 	 *   - Create a VClusterOpEngine
@@ -407,7 +409,7 @@ func (vcc *VClusterCommands) VCreateDatabase(options *VCreateDatabaseOptions) (V
 	// produce instructions
 	instructions, err := produceCreateDBInstructions(&vdb, options)
 	if err != nil {
-		vlog.LogPrintError("fail to produce instructions, %w", err)
+		vcc.Log.Error(err, "fail to produce create db instructions")
 		return vdb, err
 	}
 
@@ -416,10 +418,10 @@ func (vcc *VClusterCommands) VCreateDatabase(options *VCreateDatabaseOptions) (V
 	clusterOpEngine := MakeClusterOpEngine(instructions, &certs)
 
 	// Give the instructions to the VClusterOpEngine to run
-	runError := clusterOpEngine.Run()
-	if runError != nil {
-		vlog.LogPrintError("fail to create database, %w", runError)
-		return vdb, runError
+	err = clusterOpEngine.Run()
+	if err != nil {
+		vcc.Log.Error(err, "fail to create database, %s")
+		return vdb, err
 	}
 	return vdb, nil
 }
@@ -467,10 +469,10 @@ func produceBasicCreateDBInstructions(vdb *VCoordinationDatabase, options *VCrea
 	hosts := vdb.HostList
 	initiator := getInitiator(hosts)
 
-	nmaHealthOp := MakeNMAHealthOp("NMAHealthOp", hosts)
+	nmaHealthOp := MakeNMAHealthOp(hosts)
 
 	// require to have the same vertica version
-	nmaVerticaVersionOp := MakeNMAVerticaVersionOp("NMAVerticaVersionOp", hosts, true)
+	nmaVerticaVersionOp := MakeNMAVerticaVersionOp(hosts, true)
 
 	// need username for https operations
 	err := options.ValidateUserName()
@@ -481,12 +483,12 @@ func produceBasicCreateDBInstructions(vdb *VCoordinationDatabase, options *VCrea
 	checkDBRunningOp := MakeHTTPCheckRunningDBOp("HTTPCheckDBRunningOp", hosts,
 		true /* use password auth */, *options.UserName, options.Password, CreateDB)
 
-	nmaPrepareDirectoriesOp, err := MakeNMAPrepareDirectoriesOp("NMAPrepareDirectoriesOp", vdb.HostNodeMap)
+	nmaPrepareDirectoriesOp, err := MakeNMAPrepareDirectoriesOp(vdb.HostNodeMap)
 	if err != nil {
 		return instructions, err
 	}
 
-	nmaNetworkProfileOp := MakeNMANetworkProfileOp("NMANetworkProfileOp", hosts)
+	nmaNetworkProfileOp := MakeNMANetworkProfileOp(hosts)
 
 	// should be only one bootstrap host
 	// making it an array to follow the convention of passing a list of hosts to each operation
@@ -497,14 +499,15 @@ func produceBasicCreateDBInstructions(vdb *VCoordinationDatabase, options *VCrea
 		return instructions, err
 	}
 
-	nmaFetchVdbFromCatEdOp, err := MakeNMAFetchVdbFromCatalogEditorOp("NMAFetchVdbFromCatalogEditorOp", vdb.HostNodeMap, bootstrapHost)
+	hostCatalogPath := mapHostToCatalogPath(vdb.HostNodeMap)
+	nmaReadCatalogEditorOp, err := MakeNMAReadCatalogEditorOp(hostCatalogPath, bootstrapHost)
 	if err != nil {
 		return instructions, err
 	}
 
-	nmaStartNodeOp := MakeNMAStartNodeOp("NMAStartNodeOp", bootstrapHost)
+	nmaRestartNodeOp := makeNMAStartNodeOp(bootstrapHost, nil)
 
-	httpsPollBootstrapNodeStateOp := MakeHTTPSPollNodeStateOp("HTTPSPollNodeStateOp", bootstrapHost, true, *options.UserName, options.Password)
+	httpsPollBootstrapNodeStateOp := MakeHTTPSPollNodeStateOp(bootstrapHost, true, *options.UserName, options.Password)
 
 	instructions = append(instructions,
 		&nmaHealthOp,
@@ -513,28 +516,31 @@ func produceBasicCreateDBInstructions(vdb *VCoordinationDatabase, options *VCrea
 		&nmaPrepareDirectoriesOp,
 		&nmaNetworkProfileOp,
 		&nmaBootstrapCatalogOp,
-		&nmaFetchVdbFromCatEdOp,
-		&nmaStartNodeOp,
+		&nmaReadCatalogEditorOp,
+		&nmaRestartNodeOp,
 		&httpsPollBootstrapNodeStateOp,
 	)
 
 	newNodeHosts := util.SliceDiff(hosts, bootstrapHost)
 	if len(hosts) > 1 {
-		httpCreateNodeOp := MakeHTTPCreateNodeOp("HTTPCreateNodeOp", newNodeHosts, bootstrapHost,
-			true /* use password auth */, *options.UserName, options.Password, vdb)
+		httpCreateNodeOp := MakeHTTPCreateNodeOp(newNodeHosts, bootstrapHost,
+			true /* use password auth */, *options.UserName, options.Password, vdb, "")
 		instructions = append(instructions, &httpCreateNodeOp)
 	}
 
-	httpsReloadSpreadOp := MakeHTTPSReloadSpreadOp("HTTPSReloadSpreadOp", bootstrapHost, true, *options.UserName, options.Password)
+	httpsReloadSpreadOp := MakeHTTPSReloadSpreadOp(bootstrapHost, true, *options.UserName, options.Password)
 	instructions = append(instructions, &httpsReloadSpreadOp)
 
+	hostNodeMap := make(map[string]string)
+	for _, host := range hosts {
+		hostNodeMap[host] = vdb.HostNodeMap[host].CatalogPath
+	}
+
 	if len(hosts) > 1 {
-		produceTransferConfigOps(&instructions, bootstrapHost, newNodeHosts, vdb.HostNodeMap)
-		nmaStartNewNodesOp := MakeNMAStartNodeOp("NMAStartNodeOp", newNodeHosts)
-		instructions = append(instructions,
-			&nmaFetchVdbFromCatEdOp,
-			&nmaStartNewNodesOp,
-		)
+		instructions = append(instructions, &nmaReadCatalogEditorOp)
+		produceTransferConfigOps(&instructions, bootstrapHost, hosts, nil)
+		nmaStartNewNodesOp := makeNMAStartNodeOp(newNodeHosts, nil)
+		instructions = append(instructions, &nmaStartNewNodesOp)
 	}
 
 	return instructions, nil
@@ -549,12 +555,12 @@ func produceAdditionalCreateDBInstructions(vdb *VCoordinationDatabase, options *
 	username := *options.UserName
 
 	if !*options.SkipStartupPolling {
-		httpsPollNodeStateOp := MakeHTTPSPollNodeStateOp("HTTPSPollNodeStateOp", hosts, true, username, options.Password)
+		httpsPollNodeStateOp := MakeHTTPSPollNodeStateOp(hosts, true, username, options.Password)
 		instructions = append(instructions, &httpsPollNodeStateOp)
 	}
 
 	if vdb.UseDepot {
-		httpsCreateDepotOp := MakeHTTPSCreateDepotOp("HTTPSCreateDepotOp", vdb, bootstrapHost, true, username, options.Password)
+		httpsCreateDepotOp := MakeHTTPSCreateClusterDepotOp("HTTPSCreateDepotOp", vdb, bootstrapHost, true, username, options.Password)
 		instructions = append(instructions, &httpsCreateDepotOp)
 	}
 
@@ -570,7 +576,7 @@ func produceAdditionalCreateDBInstructions(vdb *VCoordinationDatabase, options *
 	}
 
 	if vdb.IsEon {
-		httpsSyncCatalogOp := MakeHTTPSSyncCatalogOp("HTTPSyncCatalogOp", bootstrapHost, true, username, options.Password)
+		httpsSyncCatalogOp := MakeHTTPSSyncCatalogOp(bootstrapHost, true, username, options.Password, nil)
 		instructions = append(instructions, &httpsSyncCatalogOp)
 	}
 	return instructions, nil

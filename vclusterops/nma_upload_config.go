@@ -17,8 +17,11 @@ package vclusterops
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"path"
 
+	"github.com/vertica/vcluster/vclusterops/util"
 	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
@@ -28,6 +31,8 @@ type NMAUploadConfigOp struct {
 	endpoint           string
 	fileContent        *string
 	hostRequestBodyMap map[string]string
+	sourceConfigHost   []string
+	destHosts          []string
 }
 
 type uploadConfigRequestData struct {
@@ -35,10 +40,20 @@ type uploadConfigRequestData struct {
 	Content     string `json:"content"`
 }
 
+// MakeNMAUploadConfigOp sets up the input parameters from the user for the upload operation.
+// To start the DB, insert a nil value for sourceConfigHost and newNodeHosts, and
+// provide a list of database hosts for hosts.
+// To create the DB, use the bootstrapHost value for sourceConfigHost, a nil value for newNodeHosts,
+// and provide a list of database hosts for hosts.
+// To add nodes to the DB, use the bootstrapHost value for sourceConfigHost, a list of newly added nodes
+// for newNodeHosts and provide a nil value for hosts.
 func MakeNMAUploadConfigOp(
 	opName string,
-	nodeMap map[string]VCoordinationNode,
-	newNodeHosts []string,
+	sourceConfigHost []string, // source host for transferring configuration files, specifically, it is
+	// 1. the bootstrap host when creating the database
+	// 2. the host with the highest catalog version for starting a database or starting nodes
+	hosts []string, // list of hosts of database to participate in database
+	newNodeHosts []string, // list of new hosts is added to the database
 	endpoint string,
 	fileContent *string,
 ) NMAUploadConfigOp {
@@ -47,16 +62,9 @@ func MakeNMAUploadConfigOp(
 	nmaUploadConfigOp.endpoint = endpoint
 	nmaUploadConfigOp.fileContent = fileContent
 	nmaUploadConfigOp.catalogPathMap = make(map[string]string)
-	nmaUploadConfigOp.hosts = newNodeHosts
-
-	for _, host := range newNodeHosts {
-		vnode, ok := nodeMap[host]
-		if !ok {
-			msg := fmt.Errorf("[%s] fail to get catalog path from host %s", opName, host)
-			panic(msg)
-		}
-		nmaUploadConfigOp.catalogPathMap[host] = vnode.CatalogPath
-	}
+	nmaUploadConfigOp.hosts = hosts
+	nmaUploadConfigOp.sourceConfigHost = sourceConfigHost
+	nmaUploadConfigOp.destHosts = newNodeHosts
 
 	return nmaUploadConfigOp
 }
@@ -94,31 +102,80 @@ func (op *NMAUploadConfigOp) setupClusterHTTPRequest(hosts []string) {
 	}
 }
 
-func (op *NMAUploadConfigOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *NMAUploadConfigOp) Prepare(execContext *OpEngineExecContext) error {
+	op.catalogPathMap = make(map[string]string)
+	// If nodesInfo is available, we set catalogPathMap from nodeInfo state.
+	// This case is used for restarting nodes operation.
+	// Otherwise, we set catalogPathMap from the catalog editor (start_db, create_db).
+	if len(execContext.nodesInfo) == 0 {
+		if op.sourceConfigHost == nil {
+			//  if the host with the highest catalog version for starting a database or starting nodes is nil value
+			// 	we identify the hosts that need to be synchronized.
+			hostsWithLatestCatalog := execContext.hostsWithLatestCatalog
+			if len(hostsWithLatestCatalog) == 0 {
+				return fmt.Errorf("could not find at least one host with the latest catalog")
+			}
+			hostsNeedCatalogSync := util.SliceDiff(op.hosts, hostsWithLatestCatalog)
+			// Update the hosts that need to synchronize the catalog
+			op.hosts = hostsNeedCatalogSync
+			// If no hosts to upload, skip this operation. This can happen if all
+			// hosts have the latest catalog.
+			if len(op.hosts) == 0 {
+				vlog.LogInfo("no hosts require an upload, skipping the operation")
+				op.skipExecute = true
+				return nil
+			}
+		} else {
+			if op.destHosts == nil {
+				// If the list of newly added hosts is null, the sourceConfigHost host will be the bootstrapHost input
+				// when creating the database
+				// we identify the hosts that need to be synchronized from bootstrapHost and list of hosts input
+				op.hosts = util.SliceDiff(op.hosts, op.sourceConfigHost)
+			} else {
+				// The hosts that need to be synchronized are the list of newly added hosts.
+				op.hosts = op.destHosts
+			}
+			// Update the catalogPathMap for next upload operation's steps from information of catalog editor
+			nmaVDB := execContext.nmaVDatabase
+			err := updateCatalogPathMapFromCatalogEditor(op.hosts, &nmaVDB, op.catalogPathMap)
+			if err != nil {
+				return fmt.Errorf("failed to get catalog paths from catalog editor: %w", err)
+			}
+		}
+	} else {
+		// use started nodes input provided by the user
+		op.hosts = op.destHosts
+		// Update the catalogPathMap for next upload operation's steps from node List information
+		nodesList := execContext.nodesInfo
+		for _, node := range nodesList {
+			op.catalogPathMap[node.Address] = path.Dir(node.CatalogPath)
+		}
+	}
+
 	err := op.setupRequestBody(op.hosts)
 	if err != nil {
-		return MakeClusterOpResultException()
+		return err
 	}
 	execContext.dispatcher.Setup(op.hosts)
 	op.setupClusterHTTPRequest(op.hosts)
 
-	return MakeClusterOpResultPass()
+	return nil
 }
 
-func (op *NMAUploadConfigOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *NMAUploadConfigOp) Execute(execContext *OpEngineExecContext) error {
 	if err := op.execute(execContext); err != nil {
-		return MakeClusterOpResultException()
+		return err
 	}
 
 	return op.processResult(execContext)
 }
 
-func (op *NMAUploadConfigOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *NMAUploadConfigOp) Finalize(execContext *OpEngineExecContext) error {
+	return nil
 }
 
-func (op *NMAUploadConfigOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
-	success := true
+func (op *NMAUploadConfigOp) processResult(execContext *OpEngineExecContext) error {
+	var allErrs error
 
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
@@ -127,22 +184,19 @@ func (op *NMAUploadConfigOp) processResult(execContext *OpEngineExecContext) Clu
 			// {"destination":"/data/vcluster_test_db/v_vcluster_test_db_node0003_catalog/vertica.conf"}
 			responseObj, err := op.parseAndCheckMapResponse(host, result.content)
 			if err != nil {
-				vlog.LogPrintError("[%s] fail to parse result on host %s, details: %w", op.name, host, err)
-				success = false
+				err = fmt.Errorf("[%s] fail to parse result on host %s, details: %w", op.name, host, err)
+				allErrs = errors.Join(allErrs, err)
 				continue
 			}
 			_, ok := responseObj["destination"]
 			if !ok {
-				vlog.LogError(`[%s] response does not contain field "destination"`, op.name)
-				success = false
+				err = fmt.Errorf(`[%s] response does not contain field "destination"`, op.name)
+				allErrs = errors.Join(allErrs, err)
 			}
 		} else {
-			success = false
+			allErrs = errors.Join(allErrs, result.err)
 		}
 	}
 
-	if success {
-		return MakeClusterOpResultPass()
-	}
-	return MakeClusterOpResultFail()
+	return allErrs
 }

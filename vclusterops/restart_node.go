@@ -9,7 +9,7 @@ import (
 type VRestartNodesOptions struct {
 	// basic db info
 	DatabaseOptions
-	// A set of nodes(nodename - host) in the database
+	// A set of nodes(nodename - host) that we want to restart in the database
 	Nodes map[string]string
 }
 
@@ -17,7 +17,7 @@ type VRestartNodesInfo struct {
 	// The IP address that we intend to re-IP can be obtained from a set of nodes provided as input
 	// within VRestartNodesOptions struct
 	ReIPList []string
-	// The node names that we intend to re-IP can be acquired from a set of nodes provided as input
+	// The node names that we intend to restart can be acquired from a set of nodes provided as input
 	// within the VRestartNodesOptions struct
 	NodeNamesToRestart []string
 	// the hosts that we want to restart
@@ -125,7 +125,7 @@ func (vcc *VClusterCommands) VRestartNodes(options *VRestartNodesOptions) error 
 		return err
 	}
 
-	var HostsNoNeedToReIP []string
+	var hostsNoNeedToReIP []string
 	hostNodeNameMap := make(map[string]string)
 	restartNodeInfo := new(VRestartNodesInfo)
 	for host := range vdb.HostNodeMap {
@@ -143,17 +143,18 @@ func (vcc *VClusterCommands) VRestartNodes(options *VRestartNodesOptions) error 
 			restartNodeInfo.NodeNamesToRestart = append(restartNodeInfo.NodeNamesToRestart, nodename)
 		} else {
 			// otherwise, we don't need to re-ip
-			HostsNoNeedToReIP = append(HostsNoNeedToReIP, newIP)
+			hostsNoNeedToReIP = append(hostsNoNeedToReIP, newIP)
 		}
 	}
 
 	// if we find any nodes that need to re-ip, we should restart these nodes
 	if len(restartNodeInfo.ReIPList) != 0 {
+		vlog.LogInfo("Run nodes %s with only IP changes, cannot run a combination requiring the startup of multiple nodes", restartNodeInfo.ReIPList)
 		restartNodeInfo.HostsToRestart = restartNodeInfo.ReIPList
 	} else {
 		// otherwise, we restart nodes that do not require re-IP, this scenario arises
-		// when a user restarts nodes with accurate IPs as recorded in the catalog
-		restartNodeInfo.HostsToRestart = HostsNoNeedToReIP
+		// when a user restarts all nodes with accurate IPs as recorded in the catalog
+		restartNodeInfo.HostsToRestart = hostsNoNeedToReIP
 	}
 
 	// produce restart_node instructions
@@ -218,7 +219,9 @@ func produceRestartNodesInstructions(restartNodeInfo *VRestartNodesInfo, options
 		&httpsGetUpNodesOp,
 	)
 
-	if len(restartNodeInfo.HostsToRestart) != 0 {
+	// If we identify any nodes that need re-IP, HostsToRestart will contain the nodes that need re-IP.
+	// Otherwise, HostsToRestart will consist of all hosts with IPs recorded in the catalog, which are provided by user input.
+	if len(restartNodeInfo.ReIPList) != 0 {
 		nmaNetworkProfileOp := makeNMANetworkProfileOp(restartNodeInfo.HostsToRestart)
 		httpsReIPOp, e := makeHTTPSReIPOp(restartNodeInfo.NodeNamesToRestart, restartNodeInfo.HostsToRestart,
 			options.usePassword, *options.UserName, options.Password)

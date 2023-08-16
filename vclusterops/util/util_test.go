@@ -19,11 +19,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"log"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/tonglil/buflogr"
+	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
 type NMAHealthOpResponse map[string]string
@@ -31,7 +31,9 @@ type NMAHealthOpResponse map[string]string
 func redirectLog() *bytes.Buffer {
 	// redirect log to a local bytes.Buffer
 	var logBuffer bytes.Buffer
-	log.SetOutput(&logBuffer)
+	log := buflogr.NewWithBuffer(&logBuffer)
+	vlogger := vlog.GetGlobalLogger()
+	vlogger.Log = log
 
 	return &logBuffer
 }
@@ -56,11 +58,11 @@ func TestGetJSONLogErrors(t *testing.T) {
 	err = GetJSONLogErrors(resultContent, &responseObj, "")
 
 	assert.NotNil(t, err)
-	assert.Contains(t, logBuffer.String(), "[ERROR] fail to unmarshal the response content")
+	assert.Contains(t, logBuffer.String(), "ERROR <nil> fail to unmarshal the response content")
 
 	err = GetJSONLogErrors(resultContent, &responseObj, "NMAHealthOp")
 	assert.NotNil(t, err)
-	assert.Contains(t, logBuffer.String(), "[ERROR] [NMAHealthOp] fail to unmarshal the response content")
+	assert.Contains(t, logBuffer.String(), "ERROR <nil> [NMAHealthOp] fail to unmarshal the response content")
 }
 
 func TestStringInArray(t *testing.T) {
@@ -178,6 +180,14 @@ func TestMapKeyDiff(t *testing.T) {
 	assert.Equal(t, expected, actual)
 }
 
+func TestFilterMapByKey(t *testing.T) {
+	a := map[string]int{"1": 1, "2": 2}
+	b := map[string]int{"1": 1, "3": 3, "4": 4, "2": 2}
+	keys := []string{"1", "2"}
+	c := FilterMapByKey(b, keys)
+	assert.EqualValues(t, a, c)
+}
+
 func TestGetEnv(t *testing.T) {
 	key := "NO_SUCH_ENV"
 	fallback := "test"
@@ -187,16 +197,12 @@ func TestGetEnv(t *testing.T) {
 
 func TestValidateUsernamePassword(t *testing.T) {
 	// when user name is "" but use password, the check should fail
-	checkFunc := func() {
-		ValidateUsernameAndPassword(true, "")
-	}
-	require.Panics(t, checkFunc)
+	err := ValidateUsernameAndPassword("mock_op", true, "")
+	assert.Error(t, err)
 
 	// when user name is not empty and use password, the check should succeed
-	checkFunc = func() {
-		ValidateUsernameAndPassword(true, "dkr_dbadmin")
-	}
-	require.NotPanics(t, checkFunc)
+	err = ValidateUsernameAndPassword("mock_op", true, "dkr_dbadmin")
+	assert.NoError(t, err)
 }
 
 func TestNewErrorFormatVerb(t *testing.T) {
@@ -286,4 +292,27 @@ func TestGenVNodeName(t *testing.T) {
 	vnode, ok = GenVNodeName(vnodes, dbName, totalCount)
 	assert.Equal(t, false, ok)
 	assert.Equal(t, "", vnode)
+}
+
+func TestCopySlice(t *testing.T) {
+	s1 := []string{"one", "two"}
+	s2 := CopySlice(s1)
+	assert.Equal(t, len(s2), len(s1))
+	assert.Equal(t, s1[0], s2[0])
+	assert.Equal(t, s1[1], s2[1])
+	s2 = append(s2, "three")
+	assert.NotEqual(t, len(s2), len(s1))
+}
+
+func TestCopyMap(t *testing.T) {
+	s1 := map[string]string{
+		"1": "one",
+		"2": "two",
+	}
+	s2 := CopyMap(s1)
+	assert.Equal(t, len(s2), len(s1))
+	assert.Equal(t, s1["1"], s2["1"])
+	assert.Equal(t, s1["2"], s2["2"])
+	s2["3"] = "three"
+	assert.NotEqual(t, len(s2), len(s1))
 }

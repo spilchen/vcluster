@@ -64,32 +64,7 @@ func MakeClusterCommandLauncher() ClusterCommandLauncher {
 	vlog.LogInfoln("New vcluster command initialization")
 	newLauncher := ClusterCommandLauncher{}
 
-	/* To add a new command:
-	 *   - Instantiate it below
-	 *   - Add it to allCommands
-	 */
-	createDB := MakeCmdCreateDB()
-	addNode := MakeCmdAddNode()
-	stopDB := MakeCmdStopDB()
-	dropDB := MakeCmdDropDB()
-	listAllNodes := MakeListAllNodes()
-	addSubcluster := MakeCmdAddSubcluster()
-	help := MakeCmdHelp()
-	init := MakeCmdInit()
-	config := MakeCmdConfig()
-
-	allCommands := []ClusterCommand{}
-	allCommands = append(allCommands,
-		&createDB,
-		&addNode,
-		&stopDB,
-		&help,
-		&init,
-		&config,
-		&dropDB,
-		&listAllNodes,
-		&addSubcluster,
-	)
+	allCommands := constructCmds()
 
 	newLauncher.commands = map[string]ClusterCommand{}
 	for _, c := range allCommands {
@@ -104,6 +79,30 @@ func MakeClusterCommandLauncher() ClusterCommandLauncher {
 	}
 
 	return newLauncher
+}
+
+// constructCmds returns a list of commands that will be executed
+// by the cluster command launcher.
+func constructCmds() []ClusterCommand {
+	return []ClusterCommand{
+		// db-scope cmds
+		makeCmdCreateDB(),
+		makeCmdStartDB(),
+		makeCmdStopDB(),
+		makeCmdDropDB(),
+		makeListAllNodes(),
+		makeCmdReIP(),
+		// sc-scope cmds
+		makeCmdAddSubcluster(),
+		// node-scope cmds
+		makeCmdAddNode(),
+		makeCmdRemoveNode(),
+		makeCmdRestartNodes(),
+		// others
+		makeCmdHelp(),
+		makeCmdInit(),
+		makeCmdConfig(),
+	}
 }
 
 /* Run is expected be called by a CLI program
@@ -124,7 +123,7 @@ func (c ClusterCommandLauncher) Run(inputArgv []string) error {
 		return minArgsError
 	}
 
-	subCommand, idError := identifySubcommand(c.argv, c.commands)
+	subCommand, idError := identifySubcommand(c.commands)
 	if idError != nil {
 		return idError
 	}
@@ -152,10 +151,10 @@ func (c ClusterCommandLauncher) Run(inputArgv []string) error {
 	if analyzeError != nil {
 		return analyzeError
 	}
-	return subCommand.Run()
+	return subCommand.Run(vlog.GetGlobalLogger().Log)
 }
 
-func identifySubcommand(inputArgv []string, commands map[string]ClusterCommand) (ClusterCommand, error) {
+func identifySubcommand(commands map[string]ClusterCommand) (ClusterCommand, error) {
 	userCommandString := os.Args[1]
 	command, ok := commands[userCommandString]
 

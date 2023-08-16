@@ -17,45 +17,83 @@ package vclusterops
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-
-	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
-type NMAStartNodeOp struct {
+type nmaStartNodeOp struct {
 	OpBase
 	hostRequestBodyMap map[string]string
+	vdb                *VCoordinationDatabase
 }
 
-func MakeNMAStartNodeOp(opName string, hosts []string) NMAStartNodeOp {
-	nmaStartNodeOp := NMAStartNodeOp{}
-	nmaStartNodeOp.name = opName
-	nmaStartNodeOp.hosts = hosts
-
-	return nmaStartNodeOp
+func makeNMAStartNodeOp(hosts []string) nmaStartNodeOp {
+	startNodeOp := nmaStartNodeOp{}
+	startNodeOp.name = "NMAStartNodeOp"
+	startNodeOp.hosts = hosts
+	return startNodeOp
 }
 
-func (op *NMAStartNodeOp) updateRequestBody(execContext *OpEngineExecContext) error {
+func makeNMAStartNodeOpWithVDB(hosts []string, vdb *VCoordinationDatabase) nmaStartNodeOp {
+	startNodeOp := makeNMAStartNodeOp(hosts)
+	startNodeOp.vdb = vdb
+	return startNodeOp
+}
+
+func (op *nmaStartNodeOp) updateRequestBody(execContext *OpEngineExecContext) error {
 	op.hostRequestBodyMap = make(map[string]string)
-
-	for _, host := range op.hosts {
-		node, ok := execContext.nmaVDatabase.HostNodeMap[host]
-		if !ok {
-			return fmt.Errorf("[%s] the bootstrap node (%s) is not found from the catalog editor information: %+v",
-				op.name, host, execContext.nmaVDatabase)
+	// If the execContext.StartUpCommand  is nil, we will use startup command information from NMA Read Catalog Editor.
+	// This case is used for certain operations (e.g., start_db, create_db) when the database is down,
+	// and we need to use the NMA catalog/database endpoint.
+	// Otherwise, we can use the startup command file from the HTTPS startup/commands endpoint when the database is up.
+	if execContext.startupCommandMap != nil {
+		// map {host: startCommand} e.g.,
+		// {ip1:[/opt/vertica/bin/vertica -D /data/practice_db/v_practice_db_node0001_catalog -C
+		// practice_db -n v_practice_db_node0001 -h 192.168.1.101 -p 5433 -P 4803 -Y ipv4]}
+		hostStartCommandMap := make(map[string][]string)
+		for host := range op.vdb.HostNodeMap {
+			hoststartCommand, ok := execContext.startupCommandMap[op.vdb.HostNodeMap[host].Name]
+			if ok {
+				hostStartCommandMap[host] = hoststartCommand
+			}
 		}
-
-		marshaledCommand, err := json.Marshal(node.StartCommand)
-		if err != nil {
-			return fmt.Errorf("[%s] fail to marshal start command, %w", op.name, err)
+		for _, host := range op.hosts {
+			err := op.updateHostRequestBodyMapFromNodeStartCommand(host, hostStartCommandMap[host])
+			if err != nil {
+				return err
+			}
 		}
-		op.hostRequestBodyMap[host] = fmt.Sprintf(`{"start_command": %s}`, string(marshaledCommand))
+	} else {
+		// use startup command information from NMA catalog/database endpoint when the database is down
+		for _, host := range op.hosts {
+			node, ok := execContext.nmaVDatabase.HostNodeMap[host]
+			if !ok {
+				return fmt.Errorf("[%s] the bootstrap node (%s) is not found from the catalog editor information: %+v",
+					op.name, host, execContext.nmaVDatabase)
+			}
+			err := op.updateHostRequestBodyMapFromNodeStartCommand(host, node.StartCommand)
+			if err != nil {
+				return err
+			}
+		}
 	}
-
 	return nil
 }
 
-func (op *NMAStartNodeOp) setupClusterHTTPRequest(hosts []string) {
+func (op *nmaStartNodeOp) updateHostRequestBodyMapFromNodeStartCommand(host string, hostStartCommand []string) error {
+	type NodeStartCommand struct {
+		StartCommand []string `json:"start_command"`
+	}
+	nodeStartCommand := NodeStartCommand{StartCommand: hostStartCommand}
+	marshaledCommand, err := json.Marshal(nodeStartCommand)
+	if err != nil {
+		return fmt.Errorf("[%s] fail to marshal start command to JSON string %w", op.name, err)
+	}
+	op.hostRequestBodyMap[host] = string(marshaledCommand)
+	return nil
+}
+
+func (op *nmaStartNodeOp) setupClusterHTTPRequest(hosts []string) error {
 	op.clusterHTTPRequest = ClusterHTTPRequest{}
 	op.clusterHTTPRequest.RequestCollection = make(map[string]HostHTTPRequest)
 	op.setVersionToSemVar()
@@ -67,30 +105,31 @@ func (op *NMAStartNodeOp) setupClusterHTTPRequest(hosts []string) {
 		httpRequest.RequestData = op.hostRequestBodyMap[host]
 		op.clusterHTTPRequest.RequestCollection[host] = httpRequest
 	}
+
+	return nil
 }
 
-func (op *NMAStartNodeOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *nmaStartNodeOp) prepare(execContext *OpEngineExecContext) error {
 	err := op.updateRequestBody(execContext)
 	if err != nil {
-		return MakeClusterOpResultException()
+		return err
 	}
 
 	execContext.dispatcher.Setup(op.hosts)
-	op.setupClusterHTTPRequest(op.hosts)
 
-	return MakeClusterOpResultPass()
+	return op.setupClusterHTTPRequest(op.hosts)
 }
 
-func (op *NMAStartNodeOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
-	if err := op.execute(execContext); err != nil {
-		return MakeClusterOpResultException()
+func (op *nmaStartNodeOp) execute(execContext *OpEngineExecContext) error {
+	if err := op.runExecute(execContext); err != nil {
+		return err
 	}
 
 	return op.processResult(execContext)
 }
 
-func (op *NMAStartNodeOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *nmaStartNodeOp) finalize(_ *OpEngineExecContext) error {
+	return nil
 }
 
 type startNodeResponse struct {
@@ -98,8 +137,8 @@ type startNodeResponse struct {
 	ReturnCode int    `json:"return_code"`
 }
 
-func (op *NMAStartNodeOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
-	success := true
+func (op *nmaStartNodeOp) processResult(_ *OpEngineExecContext) error {
+	var allErrs error
 
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
@@ -112,21 +151,18 @@ func (op *NMAStartNodeOp) processResult(execContext *OpEngineExecContext) Cluste
 			responseObj := startNodeResponse{}
 			err := op.parseAndCheckResponse(host, result.content, &responseObj)
 			if err != nil {
-				success = false
+				allErrs = errors.Join(allErrs, err)
 				continue
 			}
 
 			if responseObj.ReturnCode != 0 {
-				vlog.LogError(`[%s] return_code should be 0 but got %d`, op.name, responseObj.ReturnCode)
-				success = false
+				err = fmt.Errorf(`[%s] return_code should be 0 but got %d`, op.name, responseObj.ReturnCode)
+				allErrs = errors.Join(allErrs, err)
 			}
 		} else {
-			success = false
+			allErrs = errors.Join(allErrs, result.err)
 		}
 	}
 
-	if success {
-		return MakeClusterOpResultPass()
-	}
-	return MakeClusterOpResultFail()
+	return allErrs
 }

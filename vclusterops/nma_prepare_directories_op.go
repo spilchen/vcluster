@@ -17,6 +17,7 @@ package vclusterops
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/vertica/vcluster/vclusterops/vlog"
@@ -37,11 +38,10 @@ type prepareDirectoriesRequestData struct {
 	IgnoreParent     bool     `json:"ignore_parent"`
 }
 
-func MakeNMAPrepareDirectoriesOp(
-	opName string,
+func makeNMAPrepareDirectoriesOp(
 	hostNodeMap map[string]VCoordinationNode) (NMAPrepareDirectoriesOp, error) {
 	nmaPrepareDirectoriesOp := NMAPrepareDirectoriesOp{}
-	nmaPrepareDirectoriesOp.name = opName
+	nmaPrepareDirectoriesOp.name = "NMAPrepareDirectoriesOp"
 
 	err := nmaPrepareDirectoriesOp.setupRequestBody(hostNodeMap)
 	if err != nil {
@@ -56,11 +56,11 @@ func MakeNMAPrepareDirectoriesOp(
 func (op *NMAPrepareDirectoriesOp) setupRequestBody(hostNodeMap map[string]VCoordinationNode) error {
 	op.hostRequestBodyMap = make(map[string]string)
 
-	for host, vNode := range hostNodeMap {
+	for host := range hostNodeMap {
 		prepareDirData := prepareDirectoriesRequestData{}
-		prepareDirData.CatalogPath = vNode.CatalogPath
-		prepareDirData.DepotPath = vNode.DepotPath
-		prepareDirData.StorageLocations = vNode.StorageLocations
+		prepareDirData.CatalogPath = hostNodeMap[host].CatalogPath
+		prepareDirData.DepotPath = hostNodeMap[host].DepotPath
+		prepareDirData.StorageLocations = hostNodeMap[host].StorageLocations
 		prepareDirData.ForceCleanup = false
 		prepareDirData.ForRevive = false
 		prepareDirData.IgnoreParent = false
@@ -77,7 +77,7 @@ func (op *NMAPrepareDirectoriesOp) setupRequestBody(hostNodeMap map[string]VCoor
 	return nil
 }
 
-func (op *NMAPrepareDirectoriesOp) setupClusterHTTPRequest(hosts []string) {
+func (op *NMAPrepareDirectoriesOp) setupClusterHTTPRequest(hosts []string) error {
 	op.clusterHTTPRequest = ClusterHTTPRequest{}
 	op.clusterHTTPRequest.RequestCollection = make(map[string]HostHTTPRequest)
 	op.setVersionToSemVar()
@@ -89,29 +89,29 @@ func (op *NMAPrepareDirectoriesOp) setupClusterHTTPRequest(hosts []string) {
 		httpRequest.RequestData = op.hostRequestBodyMap[host]
 		op.clusterHTTPRequest.RequestCollection[host] = httpRequest
 	}
+
+	return nil
 }
 
-func (op *NMAPrepareDirectoriesOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *NMAPrepareDirectoriesOp) prepare(execContext *OpEngineExecContext) error {
 	execContext.dispatcher.Setup(op.hosts)
-	op.setupClusterHTTPRequest(op.hosts)
-
-	return MakeClusterOpResultPass()
+	return op.setupClusterHTTPRequest(op.hosts)
 }
 
-func (op *NMAPrepareDirectoriesOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
-	if err := op.execute(execContext); err != nil {
-		return MakeClusterOpResultException()
+func (op *NMAPrepareDirectoriesOp) execute(execContext *OpEngineExecContext) error {
+	if err := op.runExecute(execContext); err != nil {
+		return err
 	}
 
 	return op.processResult(execContext)
 }
 
-func (op *NMAPrepareDirectoriesOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *NMAPrepareDirectoriesOp) finalize(_ *OpEngineExecContext) error {
+	return nil
 }
 
-func (op *NMAPrepareDirectoriesOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
-	success := true
+func (op *NMAPrepareDirectoriesOp) processResult(_ *OpEngineExecContext) error {
+	var allErrs error
 
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
@@ -125,15 +125,12 @@ func (op *NMAPrepareDirectoriesOp) processResult(execContext *OpEngineExecContex
 			//  '/opt/vertica/config/logrotate': 'created'}
 			_, err := op.parseAndCheckMapResponse(host, result.content)
 			if err != nil {
-				success = false
+				allErrs = errors.Join(allErrs, err)
 			}
 		} else {
-			success = false
+			allErrs = errors.Join(allErrs, result.err)
 		}
 	}
 
-	if success {
-		return MakeClusterOpResultPass()
-	}
-	return MakeClusterOpResultFail()
+	return allErrs
 }

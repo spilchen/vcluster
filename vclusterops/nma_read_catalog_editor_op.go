@@ -17,38 +17,32 @@ package vclusterops
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/vertica/vcluster/vclusterops/vlog"
+	"golang.org/x/exp/maps"
 )
 
-type NMAFetchVdbFromCatalogEditorOp struct {
+type NMAReadCatalogEditorOp struct {
 	OpBase
+	initiator      []string
+	vdb            *VCoordinationDatabase
 	catalogPathMap map[string]string
 }
 
-func MakeNMAFetchVdbFromCatalogEditorOp(
-	opName string,
-	hostNodeMap map[string]VCoordinationNode,
-	bootstrapHosts []string) (NMAFetchVdbFromCatalogEditorOp, error) {
-	nmaFetchVdbFromCatalogEditorOp := NMAFetchVdbFromCatalogEditorOp{}
-	nmaFetchVdbFromCatalogEditorOp.name = opName
-	nmaFetchVdbFromCatalogEditorOp.hosts = bootstrapHosts
-
-	nmaFetchVdbFromCatalogEditorOp.catalogPathMap = make(map[string]string)
-	for _, host := range bootstrapHosts {
-		vnode, ok := hostNodeMap[host]
-		if !ok {
-			return nmaFetchVdbFromCatalogEditorOp,
-				fmt.Errorf("[%s] fail to get catalog path from host %s", opName, host)
-		}
-		nmaFetchVdbFromCatalogEditorOp.catalogPathMap[host] = vnode.CatalogPath
-	}
-
-	return nmaFetchVdbFromCatalogEditorOp, nil
+func makeNMAReadCatalogEditorOp(
+	initiator []string,
+	vdb *VCoordinationDatabase,
+) (NMAReadCatalogEditorOp, error) {
+	op := NMAReadCatalogEditorOp{}
+	op.name = "NMAReadCatalogEditorOp"
+	op.initiator = initiator
+	op.vdb = vdb
+	return op, nil
 }
 
-func (op *NMAFetchVdbFromCatalogEditorOp) setupClusterHTTPRequest(hosts []string) {
+func (op *NMAReadCatalogEditorOp) setupClusterHTTPRequest(hosts []string) error {
 	op.clusterHTTPRequest = ClusterHTTPRequest{}
 	op.clusterHTTPRequest.RequestCollection = make(map[string]HostHTTPRequest)
 	op.setVersionToSemVar()
@@ -60,31 +54,51 @@ func (op *NMAFetchVdbFromCatalogEditorOp) setupClusterHTTPRequest(hosts []string
 
 		catalogPath, ok := op.catalogPathMap[host]
 		if !ok {
-			vlog.LogError("[%s] cannot find catalog path of host %s", op.name, op)
+			vlog.LogError("[%s] cannot find catalog path of host %s", op.name, host)
 		}
 		httpRequest.QueryParams = map[string]string{"catalog_path": catalogPath}
 
 		op.clusterHTTPRequest.RequestCollection[host] = httpRequest
 	}
+
+	return nil
 }
 
-func (op *NMAFetchVdbFromCatalogEditorOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *NMAReadCatalogEditorOp) prepare(execContext *OpEngineExecContext) error {
+	op.catalogPathMap = make(map[string]string)
+	if len(op.initiator) == 0 {
+		op.hosts = maps.Keys(op.vdb.HostNodeMap)
+		// VER-88453 will put vnode back in the loop
+		for host := range op.vdb.HostNodeMap {
+			op.catalogPathMap[host] = op.vdb.HostNodeMap[host].CatalogPath
+		}
+	} else {
+		for _, host := range op.initiator {
+			op.hosts = append(op.hosts, host)
+			vnode, ok := op.vdb.HostNodeMap[host]
+			if !ok {
+				return fmt.Errorf("[%s] cannot find the initiator host %s from vdb.HostNodeMap %+v",
+					op.name, host, op.vdb.HostNodeMap)
+			}
+			op.catalogPathMap[host] = vnode.CatalogPath
+		}
+	}
+
 	execContext.dispatcher.Setup(op.hosts)
-	op.setupClusterHTTPRequest(op.hosts)
 
-	return MakeClusterOpResultPass()
+	return op.setupClusterHTTPRequest(op.hosts)
 }
 
-func (op *NMAFetchVdbFromCatalogEditorOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
-	if err := op.execute(execContext); err != nil {
-		return MakeClusterOpResultException()
+func (op *NMAReadCatalogEditorOp) execute(execContext *OpEngineExecContext) error {
+	if err := op.runExecute(execContext); err != nil {
+		return err
 	}
 
 	return op.processResult(execContext)
 }
 
-func (op *NMAFetchVdbFromCatalogEditorOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *NMAReadCatalogEditorOp) finalize(_ *OpEngineExecContext) error {
+	return nil
 }
 
 type NmaVersions struct {
@@ -134,11 +148,16 @@ type NmaVDatabase struct {
 	WillUpgrade             bool                `json:"will_upgrade"`
 	SpreadEncryption        string              `json:"spread_encryption"`
 	CommunalStorageLocation string              `json:"communal_storage_location"`
+	// the quorum count will not be unmarshaled but will be used in NMAReIPOp
+	// quorumCount = (1/2 * number of primary nodes) + 1
+	QuorumCount int `json:",omitempty"`
 }
 
-func (op *NMAFetchVdbFromCatalogEditorOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
-	success := true
-
+func (op *NMAReadCatalogEditorOp) processResult(execContext *OpEngineExecContext) error {
+	var allErrs error
+	var hostsWithLatestCatalog []string
+	var maxSpreadVersion int64
+	var latestNmaVDB NmaVDatabase
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
 
@@ -146,29 +165,56 @@ func (op *NMAFetchVdbFromCatalogEditorOp) processResult(execContext *OpEngineExe
 			nmaVDB := NmaVDatabase{}
 			err := op.parseAndCheckResponse(host, result.content, &nmaVDB)
 			if err != nil {
-				vlog.LogPrintError("[%s] fail to parse result on host %s, details: %w",
+				err = fmt.Errorf("[%s] fail to parse result on host %s, details: %w",
 					op.name, host, err)
-				success = false
+				allErrs = errors.Join(allErrs, err)
 				continue
 			}
 
+			var primaryNodeCount int
 			// build host to node map for NMAStartNodeOp
 			hostNodeMap := make(map[string]NmaVNode)
 			for i := 0; i < len(nmaVDB.Nodes); i++ {
 				n := nmaVDB.Nodes[i]
 				hostNodeMap[n.Address] = n
+				if n.IsPrimary {
+					primaryNodeCount++
+				}
 			}
 			nmaVDB.HostNodeMap = hostNodeMap
+			nmaVDB.QuorumCount = primaryNodeCount/2 + 1
 
-			// save NMAVDatabase to execContext
-			execContext.nmaVDatabase = nmaVDB
+			// find hosts with latest catalog version
+			spreadVersion, err := nmaVDB.Versions.Spread.Int64()
+			if err != nil {
+				err = fmt.Errorf("[%s] fail to convert spread Version to integer %s, details: %w",
+					op.name, host, err)
+				allErrs = errors.Join(allErrs, err)
+				continue
+			}
+			if spreadVersion > maxSpreadVersion {
+				hostsWithLatestCatalog = []string{host}
+				maxSpreadVersion = spreadVersion
+				// save the latest NMAVDatabase to execContext
+				latestNmaVDB = nmaVDB
+			} else if spreadVersion == maxSpreadVersion {
+				hostsWithLatestCatalog = append(hostsWithLatestCatalog, host)
+			}
 		} else {
-			success = false
+			allErrs = errors.Join(allErrs, result.err)
 		}
 	}
 
-	if success {
-		return MakeClusterOpResultPass()
+	// save hostsWithLatestCatalog to execContext
+	if len(hostsWithLatestCatalog) == 0 {
+		err := fmt.Errorf("[%s] cannot find any host with the latest catalog", op.name)
+		allErrs = errors.Join(allErrs, err)
+		return allErrs
 	}
-	return MakeClusterOpResultFail()
+
+	execContext.hostsWithLatestCatalog = hostsWithLatestCatalog
+	// save the latest nmaVDB to execContext
+	execContext.nmaVDatabase = latestNmaVDB
+
+	return allErrs
 }

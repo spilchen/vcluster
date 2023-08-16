@@ -17,18 +17,19 @@ package commands
 
 import (
 	"bytes"
-	"log"
 	"os"
 	"testing"
 
 	"github.com/vertica/vcluster/vclusterops"
+	"github.com/vertica/vcluster/vclusterops/vlog"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/tonglil/buflogr"
 )
 
 func TestInitCmd(t *testing.T) {
 	// no hosts provided, the case should fail
-	c := MakeCmdInit()
+	c := makeCmdInit()
 	err := c.Parse([]string{})
 	assert.ErrorContains(t, err, "must provide the host list with --hosts")
 
@@ -42,7 +43,7 @@ func TestInitCmd(t *testing.T) {
 
 	// directory provided, the given directory will be used
 	const configDir = "/opt/vertica/config"
-	c = MakeCmdInit()
+	c = makeCmdInit()
 	err = c.Parse([]string{
 		"--hosts", "vnode1,vnode2,vnode3",
 		"--directory", configDir})
@@ -53,7 +54,9 @@ func TestInitCmd(t *testing.T) {
 func TestConfigCmd(t *testing.T) {
 	// redirect log to a local bytes.Buffer
 	var logStr bytes.Buffer
-	log.SetOutput(&logStr)
+	log := buflogr.NewWithBuffer(&logStr)
+	vlogger := vlog.GetGlobalLogger()
+	vlogger.Log = log
 
 	// create a stub YAML file
 	const yamlPath = vclusterops.ConfigFileName
@@ -62,29 +65,29 @@ func TestConfigCmd(t *testing.T) {
 	defer os.Remove(yamlPath)
 
 	// if `--show` is not specified, the config content should not show
-	c := MakeCmdConfig()
+	c := makeCmdConfig()
 	err := c.Parse([]string{})
 	assert.Nil(t, err)
 
-	err = c.Run()
+	err = c.Run(log)
 	assert.Nil(t, err)
 	assert.NotContains(t, logStr.String(), yamlStr)
 
 	// if `--show` is specified, the config content should show
-	c = MakeCmdConfig()
+	c = makeCmdConfig()
 	err = c.Parse([]string{"--show"})
 	assert.Nil(t, err)
 
-	err = c.Run()
+	err = c.Run(log)
 	assert.Nil(t, err)
 	assert.Contains(t, logStr.String(), yamlStr)
 
 	// now run `init`, the command should fail
 	// because the config file under the current directory already exists
-	cmdInit := MakeCmdInit()
+	cmdInit := makeCmdInit()
 	err = cmdInit.Parse([]string{"--hosts", "vnode1,vnode2,vnode3"})
 	assert.Nil(t, err)
 
-	err = cmdInit.Run()
+	err = cmdInit.Run(log)
 	assert.ErrorContains(t, err, vclusterops.ConfigFileName+" already exists")
 }

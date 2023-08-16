@@ -17,8 +17,8 @@ package commands
 
 import (
 	"flag"
-	"fmt"
 
+	"github.com/go-logr/logr"
 	"github.com/vertica/vcluster/vclusterops"
 	"github.com/vertica/vcluster/vclusterops/util"
 	"github.com/vertica/vcluster/vclusterops/vlog"
@@ -38,9 +38,9 @@ type CmdAddSubcluster struct {
 	scHostListStr        *string
 }
 
-func MakeCmdAddSubcluster() CmdAddSubcluster {
+func makeCmdAddSubcluster() *CmdAddSubcluster {
 	// CmdAddSubcluster
-	newCmd := CmdAddSubcluster{}
+	newCmd := &CmdAddSubcluster{}
 
 	// parser, used to parse command-line flags
 	newCmd.parser = flag.NewFlagSet("db_add_subcluster", flag.ExitOnError)
@@ -89,12 +89,6 @@ func (c *CmdAddSubcluster) CommandType() string {
 }
 
 func (c *CmdAddSubcluster) Parse(inputArgv []string) error {
-	vlog.LogArgParse(&inputArgv)
-
-	if c.parser == nil {
-		return fmt.Errorf("unexpected nil - the parser was nil")
-	}
-
 	c.argv = inputArgv
 	err := c.ValidateParseArgv(c.CommandType())
 	if err != nil {
@@ -123,13 +117,7 @@ func (c *CmdAddSubcluster) Parse(inputArgv []string) error {
 // all validations of the arguments should go in here
 func (c *CmdAddSubcluster) validateParse() error {
 	vlog.LogInfoln("Called validateParse()")
-
-	err := c.ValidateParseBaseOptions(&c.addSubclusterOptions.DatabaseOptions)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return c.ValidateParseBaseOptions(&c.addSubclusterOptions.DatabaseOptions)
 }
 
 func (c *CmdAddSubcluster) Analyze() error {
@@ -137,11 +125,14 @@ func (c *CmdAddSubcluster) Analyze() error {
 	return nil
 }
 
-func (c *CmdAddSubcluster) Run() error {
-	vlog.LogInfoln("Called method Run()")
-	vcc := vclusterops.VClusterCommands{}
+func (c *CmdAddSubcluster) Run(log logr.Logger) error {
+	vcc := vclusterops.VClusterCommands{
+		Log: log.WithName(c.CommandType()),
+	}
+	vcc.Log.V(1).Info("Called method Run()")
 	err := vcc.VAddSubcluster(c.addSubclusterOptions)
 	if err != nil {
+		vcc.Log.Error(err, "failed to add subcluster")
 		return err
 	}
 	vlog.LogPrintInfo("Added subcluster %s to database %s", *c.addSubclusterOptions.SCName, *c.addSubclusterOptions.Name)

@@ -119,10 +119,8 @@ func (options *VStopDatabaseOptions) ValidateAnalyzeOptions(config *ClusterConfi
 	if err := options.validateParseOptions(config); err != nil {
 		return err
 	}
-	if err := options.analyzeOptions(); err != nil {
-		return err
-	}
-	return nil
+	err := options.analyzeOptions()
+	return err
 }
 
 func (vcc *VClusterCommands) VStopDatabase(options *VStopDatabaseOptions) error {
@@ -152,7 +150,7 @@ func (vcc *VClusterCommands) VStopDatabase(options *VStopDatabaseOptions) error 
 
 	instructions, err := produceStopDBInstructions(stopDBInfo, options)
 	if err != nil {
-		vlog.LogPrintError("fail to produce instructions, %w", err)
+		vlog.LogPrintError("fail to produce instructions, %s", err)
 		return err
 	}
 
@@ -163,7 +161,7 @@ func (vcc *VClusterCommands) VStopDatabase(options *VStopDatabaseOptions) error 
 	// Give the instructions to the VClusterOpEngine to run
 	runError := clusterOpEngine.Run()
 	if runError != nil {
-		vlog.LogPrintError("fail to stop database, %w", runError)
+		vlog.LogPrintError("fail to stop database, %s", runError)
 		return runError
 	}
 
@@ -193,13 +191,22 @@ func produceStopDBInstructions(stopDBInfo *VStopDatabaseInfo,
 		}
 	}
 
-	httpsGetUpNodesOp := MakeHTTPSGetUpNodesOp("HTTPSGetUpNodesOp", stopDBInfo.DBName, stopDBInfo.Hosts,
+	httpsGetUpNodesOp, err := makeHTTPSGetUpNodesOp(stopDBInfo.DBName, stopDBInfo.Hosts,
 		usePassword, *options.UserName, stopDBInfo.Password)
+	if err != nil {
+		return instructions, err
+	}
 
-	httpsStopDBOp := MakeHTTPSStopDBOp("HTTPSStopDBOp", usePassword, *options.UserName, stopDBInfo.Password, stopDBInfo.DrainSeconds)
+	httpsStopDBOp, err := makeHTTPSStopDBOp(usePassword, *options.UserName, stopDBInfo.Password, stopDBInfo.DrainSeconds)
+	if err != nil {
+		return instructions, err
+	}
 
-	httpsCheckDBRunningOp := MakeHTTPCheckRunningDBOp("HTTPSCheckDBRunningOp", stopDBInfo.Hosts,
+	httpsCheckDBRunningOp, err := makeHTTPCheckRunningDBOp(stopDBInfo.Hosts,
 		usePassword, *options.UserName, stopDBInfo.Password, StopDB)
+	if err != nil {
+		return instructions, err
+	}
 
 	instructions = append(instructions,
 		&httpsGetUpNodesOp,

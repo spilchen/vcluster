@@ -2,6 +2,7 @@ package vclusterops
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -19,13 +20,12 @@ type deleteDirParams struct {
 	Sandbox     bool     `json:"sandbox"`
 }
 
-func MakeNMADeleteDirectoriesOp(
-	opName string,
+func makeNMADeleteDirectoriesOp(
 	vdb *VCoordinationDatabase,
 	forceDelete bool,
 ) (NMADeleteDirectoriesOp, error) {
 	nmaDeleteDirectoriesOp := NMADeleteDirectoriesOp{}
-	nmaDeleteDirectoriesOp.name = opName
+	nmaDeleteDirectoriesOp.name = "NMADeleteDirectoriesOp"
 	nmaDeleteDirectoriesOp.hosts = vdb.HostList
 
 	err := nmaDeleteDirectoriesOp.buildRequestBody(vdb, forceDelete)
@@ -41,15 +41,15 @@ func (op *NMADeleteDirectoriesOp) buildRequestBody(
 	forceDelete bool,
 ) error {
 	op.hostRequestBodyMap = make(map[string]string)
-	for h, vnode := range vdb.HostNodeMap {
+	for h := range vdb.HostNodeMap {
 		p := deleteDirParams{}
 		// directories
-		p.Directories = append(p.Directories, vnode.CatalogPath)
-		p.Directories = append(p.Directories, vnode.StorageLocations...)
+		p.Directories = append(p.Directories, vdb.HostNodeMap[h].CatalogPath)
+		p.Directories = append(p.Directories, vdb.HostNodeMap[h].StorageLocations...)
 
 		if vdb.UseDepot {
 			dbDepotPath := filepath.Join(vdb.DepotPrefix, vdb.Name)
-			p.Directories = append(p.Directories, vnode.DepotPath, dbDepotPath)
+			p.Directories = append(p.Directories, vdb.HostNodeMap[h].DepotPath, dbDepotPath)
 		}
 
 		dbCatalogPath := filepath.Join(vdb.CatalogPrefix, vdb.Name)
@@ -75,7 +75,7 @@ func (op *NMADeleteDirectoriesOp) buildRequestBody(
 	return nil
 }
 
-func (op *NMADeleteDirectoriesOp) setupClusterHTTPRequest(hosts []string) {
+func (op *NMADeleteDirectoriesOp) setupClusterHTTPRequest(hosts []string) error {
 	op.clusterHTTPRequest = ClusterHTTPRequest{}
 	op.clusterHTTPRequest.RequestCollection = make(map[string]HostHTTPRequest)
 	op.setVersionToSemVar()
@@ -87,29 +87,30 @@ func (op *NMADeleteDirectoriesOp) setupClusterHTTPRequest(hosts []string) {
 		httpRequest.RequestData = op.hostRequestBodyMap[host]
 		op.clusterHTTPRequest.RequestCollection[host] = httpRequest
 	}
+
+	return nil
 }
 
-func (op *NMADeleteDirectoriesOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *NMADeleteDirectoriesOp) prepare(execContext *OpEngineExecContext) error {
 	execContext.dispatcher.Setup(op.hosts)
-	op.setupClusterHTTPRequest(op.hosts)
 
-	return MakeClusterOpResultPass()
+	return op.setupClusterHTTPRequest(op.hosts)
 }
 
-func (op *NMADeleteDirectoriesOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
-	if err := op.execute(execContext); err != nil {
-		return MakeClusterOpResultException()
+func (op *NMADeleteDirectoriesOp) execute(execContext *OpEngineExecContext) error {
+	if err := op.runExecute(execContext); err != nil {
+		return err
 	}
 
 	return op.processResult(execContext)
 }
 
-func (op *NMADeleteDirectoriesOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *NMADeleteDirectoriesOp) finalize(_ *OpEngineExecContext) error {
+	return nil
 }
 
-func (op *NMADeleteDirectoriesOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
-	success := true
+func (op *NMADeleteDirectoriesOp) processResult(_ *OpEngineExecContext) error {
+	var allErrs error
 
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
@@ -123,15 +124,12 @@ func (op *NMADeleteDirectoriesOp) processResult(execContext *OpEngineExecContext
 			// }
 			_, err := op.parseAndCheckMapResponse(host, result.content)
 			if err != nil {
-				success = false
+				allErrs = errors.Join(allErrs, err)
 			}
 		} else {
-			success = false
+			allErrs = errors.Join(allErrs, result.err)
 		}
 	}
 
-	if success {
-		return MakeClusterOpResultPass()
-	}
-	return MakeClusterOpResultFail()
+	return allErrs
 }

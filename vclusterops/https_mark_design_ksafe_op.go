@@ -16,6 +16,8 @@
 package vclusterops
 
 import (
+	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/vertica/vcluster/vclusterops/util"
@@ -27,19 +29,20 @@ const oneSafeRspStr = "Marked design 1-safe"
 
 type HTTPSMarkDesignKSafeOp struct {
 	OpBase
-	OpHTTPBase
+	OpHTTPSBase
 	RequestParams map[string]string
 	ksafeValue    int
 }
 
-func MakeHTTPSMarkDesignKSafeOp(opName string,
+func makeHTTPSMarkDesignKSafeOp(
 	hosts []string,
 	useHTTPPassword bool,
 	userName string,
 	httpsPassword *string,
-	ksafeValue int) HTTPSMarkDesignKSafeOp {
+	ksafeValue int,
+) (HTTPSMarkDesignKSafeOp, error) {
 	httpsMarkDesignKSafeOp := HTTPSMarkDesignKSafeOp{}
-	httpsMarkDesignKSafeOp.name = opName
+	httpsMarkDesignKSafeOp.name = "HTTPSMarkDesignKsafeOp"
 	httpsMarkDesignKSafeOp.hosts = hosts
 	httpsMarkDesignKSafeOp.useHTTPPassword = useHTTPPassword
 
@@ -49,13 +52,16 @@ func MakeHTTPSMarkDesignKSafeOp(opName string,
 	httpsMarkDesignKSafeOp.RequestParams = make(map[string]string)
 	httpsMarkDesignKSafeOp.RequestParams["k"] = strconv.Itoa(ksafeValue)
 
-	util.ValidateUsernameAndPassword(useHTTPPassword, userName)
+	err := util.ValidateUsernameAndPassword(httpsMarkDesignKSafeOp.name, useHTTPPassword, userName)
+	if err != nil {
+		return httpsMarkDesignKSafeOp, err
+	}
 	httpsMarkDesignKSafeOp.userName = userName
 	httpsMarkDesignKSafeOp.httpsPassword = httpsPassword
-	return httpsMarkDesignKSafeOp
+	return httpsMarkDesignKSafeOp, nil
 }
 
-func (op *HTTPSMarkDesignKSafeOp) setupClusterHTTPRequest(hosts []string) {
+func (op *HTTPSMarkDesignKSafeOp) setupClusterHTTPRequest(hosts []string) error {
 	op.clusterHTTPRequest = ClusterHTTPRequest{}
 	op.clusterHTTPRequest.RequestCollection = make(map[string]HostHTTPRequest)
 	op.setVersionToSemVar()
@@ -72,18 +78,19 @@ func (op *HTTPSMarkDesignKSafeOp) setupClusterHTTPRequest(hosts []string) {
 		httpRequest.QueryParams = op.RequestParams
 		op.clusterHTTPRequest.RequestCollection[host] = httpRequest
 	}
+
+	return nil
 }
 
-func (op *HTTPSMarkDesignKSafeOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *HTTPSMarkDesignKSafeOp) prepare(execContext *OpEngineExecContext) error {
 	execContext.dispatcher.Setup(op.hosts)
-	op.setupClusterHTTPRequest(op.hosts)
 
-	return MakeClusterOpResultPass()
+	return op.setupClusterHTTPRequest(op.hosts)
 }
 
-func (op *HTTPSMarkDesignKSafeOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
-	if err := op.execute(execContext); err != nil {
-		return MakeClusterOpResultException()
+func (op *HTTPSMarkDesignKSafeOp) execute(execContext *OpEngineExecContext) error {
+	if err := op.runExecute(execContext); err != nil {
+		return err
 	}
 
 	return op.processResult(execContext)
@@ -96,15 +103,15 @@ type MarkDesignKSafeRsp struct {
 	Detail string `json:"detail"`
 }
 
-func (op *HTTPSMarkDesignKSafeOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
-	success := true
+func (op *HTTPSMarkDesignKSafeOp) processResult(_ *OpEngineExecContext) error {
+	var allErrs error
 
 	// in practice, just the initiator node
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
 
 		if !result.isPassing() {
-			success = false
+			allErrs = errors.Join(allErrs, result.err)
 			continue
 		}
 
@@ -113,8 +120,8 @@ func (op *HTTPSMarkDesignKSafeOp) processResult(execContext *OpEngineExecContext
 		markDesignKSafeRsp := MarkDesignKSafeRsp{}
 		err := op.parseAndCheckResponse(host, result.content, &markDesignKSafeRsp)
 		if err != nil {
-			vlog.LogPrintError(`[%s] fail to parse result on host %s, details: %w`, op.name, host, err)
-			success = false
+			err = fmt.Errorf(`[%s] fail to parse result on host %s, details: %w`, op.name, host, err)
+			allErrs = errors.Join(allErrs, err)
 			continue
 		}
 
@@ -125,30 +132,27 @@ func (op *HTTPSMarkDesignKSafeOp) processResult(execContext *OpEngineExecContext
 		} else if markDesignKSafeRsp.Detail == oneSafeRspStr {
 			ksafeValue = 1
 		} else {
-			vlog.LogPrintError(`[%s] fail to parse the ksafety value information, detail: %s`,
+			err = fmt.Errorf(`[%s] fail to parse the ksafety value information, detail: %s`,
 				op.name, markDesignKSafeRsp.Detail)
-			success = false
+			allErrs = errors.Join(allErrs, err)
 			continue
 		}
 
 		// compare the ksafety_value from output JSON with k_value input value
 		// verify if the return ksafety_value is the one we insert into the endpoint
 		if ksafeValue != op.ksafeValue {
-			vlog.LogPrintError(`[%s] mismatch between request and response k-safety values, request: %d, response: %d`,
+			err = fmt.Errorf(`[%s] mismatch between request and response k-safety values, request: %d, response: %d`,
 				op.name, op.ksafeValue, ksafeValue)
-			success = false
+			allErrs = errors.Join(allErrs, err)
 			continue
 		}
 
 		vlog.LogPrintInfo(`[%s] The K-safety value of the database is set as %d`, op.name, ksafeValue)
 	}
 
-	if success {
-		return MakeClusterOpResultPass()
-	}
-	return MakeClusterOpResultFail()
+	return allErrs
 }
 
-func (op *HTTPSMarkDesignKSafeOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *HTTPSMarkDesignKSafeOp) finalize(_ *OpEngineExecContext) error {
+	return nil
 }

@@ -50,7 +50,16 @@ type DatabaseOptions struct {
 	// part 4: other info
 	LogPath        *string
 	HonorUserInput *bool
+	usePassword    bool
 }
+
+const (
+	commandCreateDB   = "create_db"
+	commandDropDB     = "drop_db"
+	commandStopDB     = "stop_db"
+	commandStartDB    = "start_db"
+	commandAddCluster = "db_add_subcluster"
+)
 
 func (opt *DatabaseOptions) SetDefaultValues() {
 	opt.Name = new(string)
@@ -121,7 +130,7 @@ func (opt *DatabaseOptions) ValidateBaseOptions(commandName string) error {
 // ValidateHostsAndPwd will validate raw hosts and password
 func (opt *DatabaseOptions) ValidateHostsAndPwd(commandName string) error {
 	// when we create db, we need hosts and set password to "" if user did not provide one
-	if commandName == "create_db" {
+	if commandName == commandCreateDB {
 		// raw hosts
 		if len(opt.RawHosts) == 0 {
 			return fmt.Errorf("must specify a host or host list")
@@ -151,13 +160,13 @@ func (opt *DatabaseOptions) ValidateHostsAndPwd(commandName string) error {
 func (opt *DatabaseOptions) ValidatePaths(commandName string) error {
 	// validate for the following commands only
 	// TODO: add other commands into the command list
-	commands := []string{"create_db", "drop_db"}
+	commands := []string{commandCreateDB, commandDropDB}
 	if !slices.Contains(commands, commandName) {
 		return nil
 	}
 
 	// catalog prefix path
-	err := util.ValidateRequiredAbsPath(opt.CatalogPrefix, "catalog path")
+	err := opt.ValidateCatalogPath()
 	if err != nil {
 		return err
 	}
@@ -175,15 +184,19 @@ func (opt *DatabaseOptions) ValidatePaths(commandName string) error {
 			return err
 		}
 	}
-
 	return nil
+}
+
+func (opt *DatabaseOptions) ValidateCatalogPath() error {
+	// catalog prefix path
+	return util.ValidateRequiredAbsPath(opt.CatalogPrefix, "catalog path")
 }
 
 // validate config directory
 func (opt *DatabaseOptions) ValidateConfigDir(commandName string) error {
 	// validate for the following commands only
 	// TODO: add other commands into the command list
-	commands := []string{"create_db", "drop_db", "stop_db", "db_add_subcluster"}
+	commands := []string{commandCreateDB, commandDropDB, commandStopDB, commandStartDB, commandAddCluster}
 	if slices.Contains(commands, commandName) {
 		return nil
 	}
@@ -218,6 +231,21 @@ func (opt *DatabaseOptions) ValidateUserName() error {
 		*opt.UserName = username
 	}
 	vlog.LogInfo("Current username is %s", *opt.UserName)
+
+	return nil
+}
+
+func (opt *DatabaseOptions) SetUsePassword() error {
+	// when password is specified,
+	// we will use username/password to call https endpoints
+	opt.usePassword = false
+	if opt.Password != nil {
+		opt.usePassword = true
+		err := opt.ValidateUserName()
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -258,9 +286,49 @@ func (opt *DatabaseOptions) GetNameAndHosts(config *ClusterConfig) (dbName strin
 	return dbName, hosts
 }
 
+// GetCatalogPrefix can choose the right catalog prefix from user input and config file
+func (opt *DatabaseOptions) GetCatalogPrefix(config *ClusterConfig) (catalogPrefix string) {
+	// when config file is not available, we use user input
+	// HonorUserInput must be true at this time, otherwise vcluster has stopped when it cannot find the config file
+	if config == nil {
+		return *opt.CatalogPrefix
+	}
+	catalogPrefix = config.CatalogPath
+	// if HonorUserInput is set, we choose the user input
+	if *opt.CatalogPrefix != "" && *opt.HonorUserInput {
+		catalogPrefix = *opt.CatalogPrefix
+	}
+	return catalogPrefix
+}
+
+// getDepotAndDataPrefix chooses the right depot/data prefix from user input and config file.
+func (opt *DatabaseOptions) getDepotAndDataPrefix(config *ClusterConfig) (depotPrefix, dataPrefix string) {
+	if config == nil {
+		return *opt.DepotPrefix, *opt.DataPrefix
+	}
+	depotPrefix = config.DepotPath
+	dataPrefix = config.DataPath
+	// if HonorUserInput is set, we choose the user input
+	if !*opt.HonorUserInput {
+		return depotPrefix, dataPrefix
+	}
+	if *opt.DepotPrefix != "" {
+		depotPrefix = *opt.DepotPrefix
+	}
+	if *opt.DataPrefix != "" {
+		dataPrefix = *opt.DataPrefix
+	}
+	return depotPrefix, dataPrefix
+}
+
 // GetDBConfig can read database configurations from vertica_cluster.yaml to the struct ClusterConfig
 func (opt *DatabaseOptions) GetDBConfig() (config *ClusterConfig, e error) {
 	var configDir string
+
+	if opt.ConfigDirectory == nil && !*opt.HonorUserInput {
+		return nil, fmt.Errorf("only supported two options: honor-user-input and config-directory")
+	}
+
 	if opt.ConfigDirectory != nil {
 		configDir = *opt.ConfigDirectory
 	} else {
@@ -287,4 +355,13 @@ func (opt *DatabaseOptions) GetDBConfig() (config *ClusterConfig, e error) {
 	}
 
 	return config, nil
+}
+
+// normalizePaths replaces all '//' to be '/', and trim
+// catalog, data and depot prefixes.
+func (opt *DatabaseOptions) normalizePaths() {
+	// process correct catalog path, data path and depot path prefixes
+	*opt.CatalogPrefix = util.GetCleanPath(*opt.CatalogPrefix)
+	*opt.DataPrefix = util.GetCleanPath(*opt.DataPrefix)
+	*opt.DepotPrefix = util.GetCleanPath(*opt.DepotPrefix)
 }

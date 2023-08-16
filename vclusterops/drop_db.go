@@ -23,6 +23,7 @@ func VDropDatabaseOptionsFactory() VDropDatabaseOptions {
 	return opt
 }
 
+// TODO: call this func when honor-user-input is implemented
 func (options *VDropDatabaseOptions) AnalyzeOptions() error {
 	hostAddresses, err := util.ResolveRawHostsToAddresses(options.RawHosts, options.Ipv6.ToBool())
 	if err != nil {
@@ -67,7 +68,7 @@ func VDropDatabase(options *VDropDatabaseOptions) error {
 	// produce drop_db instructions
 	instructions, err := produceDropDBInstructions(&vdb, options)
 	if err != nil {
-		vlog.LogPrintError("fail to produce instructions, %w", err)
+		vlog.LogPrintError("fail to produce instructions, %s", err)
 		return err
 	}
 
@@ -75,10 +76,10 @@ func VDropDatabase(options *VDropDatabaseOptions) error {
 	certs := HTTPSCerts{key: options.Key, cert: options.Cert, caCert: options.CaCert}
 	clusterOpEngine := MakeClusterOpEngine(instructions, &certs)
 
-	// Give the instructions to the VClusterOpEngine to run
+	// give the instructions to the VClusterOpEngine to run
 	runError := clusterOpEngine.Run()
 	if runError != nil {
-		vlog.LogPrintError("fail to drop database: %w", runError)
+		vlog.LogPrintError("fail to drop database: %s", runError)
 		return runError
 	}
 
@@ -114,17 +115,20 @@ func produceDropDBInstructions(vdb *VCoordinationDatabase, options *VDropDatabas
 		}
 	}
 
-	nmaHealthOp := MakeNMAHealthOp("NMAHealthOp", hosts)
+	nmaHealthOp := makeNMAHealthOp(hosts)
 
 	// require to have the same vertica version
-	nmaVerticaVersionOp := MakeNMAVerticaVersionOp("NMAVerticaVersionOp", hosts, true)
+	nmaVerticaVersionOp := makeNMAVerticaVersionOp(hosts, true)
 
 	// when checking the running database,
 	// drop_db has the same checking items with create_db
-	checkDBRunningOp := MakeHTTPCheckRunningDBOp("HTTPCheckDBRunningOp", hosts,
-		usePassword, *options.UserName, options.Password, CreateDB)
+	checkDBRunningOp, err := makeHTTPCheckRunningDBOp(hosts, usePassword,
+		*options.UserName, options.Password, CreateDB)
+	if err != nil {
+		return instructions, err
+	}
 
-	nmaDeleteDirectoriesOp, err := MakeNMADeleteDirectoriesOp("NMADeleteDirectoriesOp", vdb, *options.ForceDelete)
+	nmaDeleteDirectoriesOp, err := makeNMADeleteDirectoriesOp(vdb, *options.ForceDelete)
 	if err != nil {
 		return instructions, err
 	}

@@ -16,29 +16,36 @@
 package vclusterops
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/vertica/vcluster/vclusterops/util"
 	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
 type HTTPSInstallPackagesOp struct {
 	OpBase
-	OpHTTPBase
+	OpHTTPSBase
 }
 
-func MakeHTTPSInstallPackagesOp(opName string, hosts []string,
-	useHTTPPassword bool, userName string, httpsPassword *string) HTTPSInstallPackagesOp {
+func makeHTTPSInstallPackagesOp(hosts []string, useHTTPPassword bool,
+	userName string, httpsPassword *string,
+) (HTTPSInstallPackagesOp, error) {
 	installPackagesOp := HTTPSInstallPackagesOp{}
-	installPackagesOp.name = opName
+	installPackagesOp.name = "HTTPSInstallPackagesOp"
 	installPackagesOp.hosts = hosts
 
-	util.ValidateUsernameAndPassword(useHTTPPassword, userName)
+	err := util.ValidateUsernameAndPassword(installPackagesOp.name, useHTTPPassword, userName)
+	if err != nil {
+		return installPackagesOp, err
+	}
 	installPackagesOp.useHTTPPassword = useHTTPPassword
 	installPackagesOp.userName = userName
 	installPackagesOp.httpsPassword = httpsPassword
-	return installPackagesOp
+	return installPackagesOp, nil
 }
 
-func (op *HTTPSInstallPackagesOp) setupClusterHTTPRequest(hosts []string) {
+func (op *HTTPSInstallPackagesOp) setupClusterHTTPRequest(hosts []string) error {
 	op.clusterHTTPRequest = ClusterHTTPRequest{}
 	op.clusterHTTPRequest.RequestCollection = make(map[string]HostHTTPRequest)
 	op.setVersionToSemVar()
@@ -53,25 +60,26 @@ func (op *HTTPSInstallPackagesOp) setupClusterHTTPRequest(hosts []string) {
 		}
 		op.clusterHTTPRequest.RequestCollection[host] = httpRequest
 	}
+
+	return nil
 }
 
-func (op *HTTPSInstallPackagesOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *HTTPSInstallPackagesOp) prepare(execContext *OpEngineExecContext) error {
 	execContext.dispatcher.Setup(op.hosts)
-	op.setupClusterHTTPRequest(op.hosts)
 
-	return MakeClusterOpResultPass()
+	return op.setupClusterHTTPRequest(op.hosts)
 }
 
-func (op *HTTPSInstallPackagesOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
-	if err := op.execute(execContext); err != nil {
-		return MakeClusterOpResultException()
+func (op *HTTPSInstallPackagesOp) execute(execContext *OpEngineExecContext) error {
+	if err := op.runExecute(execContext); err != nil {
+		return err
 	}
 
 	return op.processResult(execContext)
 }
 
-func (op *HTTPSInstallPackagesOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *HTTPSInstallPackagesOp) finalize(_ *OpEngineExecContext) error {
+	return nil
 }
 
 /*
@@ -93,14 +101,14 @@ func (op *HTTPSInstallPackagesOp) Finalize(execContext *OpEngineExecContext) Clu
 */
 type HTTPSInstallPackagesResponse map[string][]map[string]string
 
-func (op *HTTPSInstallPackagesOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
-	success := true
+func (op *HTTPSInstallPackagesOp) processResult(_ *OpEngineExecContext) error {
+	var allErrs error
 
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
 
 		if !result.isPassing() {
-			success = false
+			allErrs = errors.Join(allErrs, result.err)
 			continue
 		}
 
@@ -108,20 +116,17 @@ func (op *HTTPSInstallPackagesOp) processResult(execContext *OpEngineExecContext
 		err := op.parseAndCheckResponse(host, result.content, &responseObj)
 
 		if err != nil {
-			success = false
+			allErrs = errors.Join(allErrs, err)
 			continue
 		}
 
 		installedPackages, ok := responseObj["packages"]
 		if !ok {
-			vlog.LogError(`[%s] response does not contain field "packages"`, op.name)
-			success = false
+			err = fmt.Errorf(`[%s] response does not contain field "packages"`, op.name)
+			allErrs = errors.Join(allErrs, err)
 		}
 
 		vlog.LogPrintInfo("[%s] installed packages: %v", op.name, installedPackages)
 	}
-	if success {
-		return MakeClusterOpResultPass()
-	}
-	return MakeClusterOpResultFail()
+	return allErrs
 }

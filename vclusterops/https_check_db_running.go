@@ -16,6 +16,7 @@
 package vclusterops
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -37,6 +38,7 @@ type OpType int
 const (
 	CreateDB OpType = iota
 	StopDB
+	StartDB
 )
 
 func (op OpType) String() string {
@@ -45,32 +47,39 @@ func (op OpType) String() string {
 		return "Create DB"
 	case StopDB:
 		return "Stop DB"
+	case StartDB:
+		return "Start DB"
 	}
 	return "unknown operation"
 }
 
 type HTTPCheckRunningDBOp struct {
 	OpBase
-	OpHTTPBase
+	OpHTTPSBase
 	opType OpType
 }
 
-func MakeHTTPCheckRunningDBOp(opName string, hosts []string,
+func makeHTTPCheckRunningDBOp(hosts []string,
 	useHTTPPassword bool, userName string,
-	httpsPassword *string, opType OpType) HTTPCheckRunningDBOp {
+	httpsPassword *string, opType OpType,
+) (HTTPCheckRunningDBOp, error) {
 	runningDBChecker := HTTPCheckRunningDBOp{}
-	runningDBChecker.name = opName
+	runningDBChecker.name = "HTTPCheckDBRunningOp"
 	runningDBChecker.hosts = hosts
 	runningDBChecker.useHTTPPassword = useHTTPPassword
 
-	util.ValidateUsernameAndPassword(useHTTPPassword, userName)
+	err := util.ValidateUsernameAndPassword(runningDBChecker.name, useHTTPPassword, userName)
+	if err != nil {
+		return runningDBChecker, err
+	}
+
 	runningDBChecker.userName = userName
 	runningDBChecker.httpsPassword = httpsPassword
 	runningDBChecker.opType = opType
-	return runningDBChecker
+	return runningDBChecker, nil
 }
 
-func (op *HTTPCheckRunningDBOp) setupClusterHTTPRequest(hosts []string) {
+func (op *HTTPCheckRunningDBOp) setupClusterHTTPRequest(hosts []string) error {
 	op.clusterHTTPRequest = ClusterHTTPRequest{}
 	op.clusterHTTPRequest.RequestCollection = make(map[string]HostHTTPRequest)
 	op.setVersionToSemVar()
@@ -85,17 +94,18 @@ func (op *HTTPCheckRunningDBOp) setupClusterHTTPRequest(hosts []string) {
 		}
 		op.clusterHTTPRequest.RequestCollection[host] = httpRequest
 	}
+
+	return nil
 }
 
 func (op *HTTPCheckRunningDBOp) logPrepare() {
 	vlog.LogInfo("[%s] Prepare() called for operation %s \n", op.name, op.opType)
 }
 
-func (op *HTTPCheckRunningDBOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *HTTPCheckRunningDBOp) prepare(execContext *OpEngineExecContext) error {
 	execContext.dispatcher.Setup(op.hosts)
-	op.setupClusterHTTPRequest(op.hosts)
 
-	return MakeClusterOpResultPass()
+	return op.setupClusterHTTPRequest(op.hosts)
 }
 
 /* HTTPNodeStateResponse example:
@@ -127,15 +137,16 @@ func (op *HTTPCheckRunningDBOp) isDBRunningOnHost(host string,
 	nodeList, ok := responseObj["node_list"]
 	if !ok {
 		// hanging HTTPS service thread
-		if op.opType == CreateDB {
+		switch op.opType {
+		case CreateDB:
 			msg = fmt.Sprintf("[%s] Detected HTTPS service running on host %s, please stop the HTTPS service before creating a new database",
 				op.name, host)
-		} else if op.opType == StopDB {
+		case StopDB, StartDB:
 			msg = fmt.Sprintf("[%s] Detected HTTPS service running on host %s", op.name, host)
 		}
 		return false, msg, nil
 	}
-	// exception, panic out loudly
+	// exception, throw an error
 	if len(nodeList) == 0 {
 		noNodeErr := fmt.Errorf("[%s] Unexpected result from host %s: empty node_list obtained from /nodes endpoint response",
 			op.name, host)
@@ -144,7 +155,7 @@ func (op *HTTPCheckRunningDBOp) isDBRunningOnHost(host string,
 
 	nodeInfo := nodeList[0]
 	runningDBName, ok := nodeInfo["database"]
-	// exception, panic out
+	// exception, throw an error
 	if !ok {
 		noDBInfoErr := fmt.Errorf("[%s] Unexpected result from host %s: no database name returned from /nodes endpoint response", op.name, host)
 		return true, "", noDBInfoErr
@@ -154,7 +165,11 @@ func (op *HTTPCheckRunningDBOp) isDBRunningOnHost(host string,
 	return true, msg, nil
 }
 
-func (op *HTTPCheckRunningDBOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
+// processResult will look at all of the results that come back from the hosts.
+// We don't return an error if all of the nodes are down. Otherwise, an error is
+// returned.
+func (op *HTTPCheckRunningDBOp) processResult(_ *OpEngineExecContext) error {
+	var allErrs error
 	// golang doesn't have set data structure,
 	// so use maps for caching distinct up and down hosts
 	// we have this list of hosts for better debugging info
@@ -172,6 +187,9 @@ func (op *HTTPCheckRunningDBOp) processResult(execContext *OpEngineExecContext) 
 		vlog.LogPrintInfo("[%s] result from host %s summary %s, details: %+v.",
 			op.name, host, resSummaryStr, result)
 
+		if !result.isPassing() {
+			allErrs = errors.Join(allErrs, result.err)
+		}
 		if result.isFailing() && !result.IsHTTPRunning() {
 			downHosts[host] = true
 			continue
@@ -187,18 +205,18 @@ func (op *HTTPCheckRunningDBOp) processResult(execContext *OpEngineExecContext) 
 
 		// don't return, as an error here could just mean a node not being up
 		if err != nil {
-			vlog.LogError("[%s] error happened parsing the response of host %s, error info: %s",
-				op.name, host, err.Error())
+			err = fmt.Errorf("[%s] error happened parsing the response of host %s, error info: %w",
+				op.name, host, err)
+			allErrs = errors.Join(allErrs, err)
 			msg = result.content
 			continue
 		}
-		dbRunning, checkMsg, errCheckDBRunning := op.isDBRunningOnHost(host, responseObj)
-		if errCheckDBRunning != nil {
-			vlog.LogError("[%s] error happened during checking DB running on host %s, details: %s",
-				op.name, host, errCheckDBRunning.Error())
-			return MakeClusterOpResultFail()
+		dbRunning, checkMsg, err := op.isDBRunningOnHost(host, responseObj)
+		if err != nil {
+			return fmt.Errorf("[%s] error happened during checking DB running on host %s, details: %w",
+				op.name, host, err)
 		}
-		vlog.LogInfo("[%s] DB running on host %s: %s, detail: %s", op.name, host, dbRunning, checkMsg)
+		vlog.LogInfo("[%s] DB running on host %s: %t, detail: %s", op.name, host, dbRunning, checkMsg)
 		// return at least one check msg to user
 		msg = checkMsg
 	}
@@ -208,19 +226,21 @@ func (op *HTTPCheckRunningDBOp) processResult(execContext *OpEngineExecContext) 
 		op.name, upHosts, downHosts, exceptionHosts)
 	// no DB is running on hosts, return a passed result
 	if len(upHosts) == 0 {
-		return MakeClusterOpResultPass()
+		return nil
 	}
 
 	vlog.LogPrintInfoln(msg)
-	if op.opType == CreateDB {
+
+	switch op.opType {
+	case CreateDB:
 		vlog.LogPrintInfoln("Aborting database creation")
-	} else if op.opType == StopDB {
+	case StopDB, StartDB:
 		vlog.LogPrintInfoln("The database has not been down yet")
 	}
-	return MakeClusterOpResultFail()
+	return allErrs
 }
 
-func (op *HTTPCheckRunningDBOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *HTTPCheckRunningDBOp) execute(execContext *OpEngineExecContext) error {
 	if op.opType == CreateDB {
 		vlog.LogInfo("[%s] Execute() for operation %s", op.name, op.opType)
 		return op.checkDBConnection(execContext)
@@ -228,20 +248,19 @@ func (op *HTTPCheckRunningDBOp) Execute(execContext *OpEngineExecContext) Cluste
 	return op.pollForDBDown(execContext)
 }
 
-func (op *HTTPCheckRunningDBOp) pollForDBDown(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *HTTPCheckRunningDBOp) pollForDBDown(execContext *OpEngineExecContext) error {
 	// start the polling
 	startTime := time.Now()
 	// for tests
 	timeoutSecondStr := util.GetEnv("NODE_STATE_POLLING_TIMEOUT", strconv.Itoa(StopDBTimeout))
 	timeoutSecond, err := strconv.Atoi(timeoutSecondStr)
 	if err != nil {
-		vlog.LogPrintError("invalid timeout value %s", timeoutSecondStr)
-		return MakeClusterOpResultFail()
+		return fmt.Errorf("invalid timeout value %s: %w", timeoutSecondStr, err)
 	}
 
 	// do not poll, just return succeed
 	if timeoutSecond <= 0 {
-		return MakeClusterOpResultPass()
+		return nil
 	}
 	duration := time.Duration(timeoutSecond) * time.Second
 	count := 0
@@ -254,30 +273,33 @@ func (op *HTTPCheckRunningDBOp) pollForDBDown(execContext *OpEngineExecContext) 
 		}
 		err = execContext.dispatcher.sendRequest(&op.clusterHTTPRequest)
 		if err != nil {
-			vlog.LogError("Fail to dispatch request %v", op.clusterHTTPRequest)
-			return MakeClusterOpResultException()
+			return fmt.Errorf("fail to dispatch request %v: %w", op.clusterHTTPRequest, err)
 		}
-		result := op.processResult(execContext)
-		// db not UP, return
-		if result.status == SUCCESS {
-			return result
+		err = op.processResult(execContext)
+		// If we get an error, intentionally eat the error so that we send the
+		// request again. We are waiting for all nodes to be down, which is a
+		// success result from processContext.
+		if err != nil {
+			vlog.LogInfo("[%s] failure when checking node status: %s", op.name, err)
+		} else {
+			return nil
 		}
 		count++
 	}
 	// timeout
-	vlog.LogPrintWarning("the DB is still up after %s seconds", timeoutSecondStr)
-	return MakeClusterOpResultFail()
+	msg := fmt.Sprintf("the DB is still up after %s seconds", timeoutSecondStr)
+	vlog.LogPrintWarning(msg)
+	return errors.New(msg)
 }
 
-func (op *HTTPCheckRunningDBOp) checkDBConnection(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *HTTPCheckRunningDBOp) checkDBConnection(execContext *OpEngineExecContext) error {
 	err := execContext.dispatcher.sendRequest(&op.clusterHTTPRequest)
 	if err != nil {
-		vlog.LogError("Fail to dispatch request %v", op.clusterHTTPRequest)
-		return MakeClusterOpResultException()
+		return fmt.Errorf("fail to dispatch request %v: %w", op.clusterHTTPRequest, err)
 	}
 	return op.processResult(execContext)
 }
 
-func (op *HTTPCheckRunningDBOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *HTTPCheckRunningDBOp) finalize(_ *OpEngineExecContext) error {
+	return nil
 }

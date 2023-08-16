@@ -16,6 +16,8 @@
 package vclusterops
 
 import (
+	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/vertica/vcluster/vclusterops/util"
@@ -24,23 +26,27 @@ import (
 
 type HTTPSSyncCatalogOp struct {
 	OpBase
-	OpHTTPBase
+	OpHTTPSBase
 }
 
-func MakeHTTPSSyncCatalogOp(opName string, hosts []string, useHTTPPassword bool,
-	userName string, httpsPassword *string) HTTPSSyncCatalogOp {
-	httpsSyncCatalogOp := HTTPSSyncCatalogOp{}
-	httpsSyncCatalogOp.name = opName
-	httpsSyncCatalogOp.hosts = hosts
-	httpsSyncCatalogOp.useHTTPPassword = useHTTPPassword
+func makeHTTPSSyncCatalogOp(hosts []string, useHTTPPassword bool,
+	userName string, httpsPassword *string) (HTTPSSyncCatalogOp, error) {
+	op := HTTPSSyncCatalogOp{}
+	op.name = "HTTPSSyncCatalogOp"
+	op.hosts = hosts
+	op.useHTTPPassword = useHTTPPassword
 
-	util.ValidateUsernameAndPassword(useHTTPPassword, userName)
-	httpsSyncCatalogOp.userName = userName
-	httpsSyncCatalogOp.httpsPassword = httpsPassword
-	return httpsSyncCatalogOp
+	err := util.ValidateUsernameAndPassword(op.name, useHTTPPassword, userName)
+	if err != nil {
+		return op, err
+	}
+
+	op.userName = userName
+	op.httpsPassword = httpsPassword
+	return op, nil
 }
 
-func (op *HTTPSSyncCatalogOp) setupClusterHTTPRequest(hosts []string) {
+func (op *HTTPSSyncCatalogOp) setupClusterHTTPRequest(hosts []string) error {
 	op.clusterHTTPRequest = ClusterHTTPRequest{}
 	op.clusterHTTPRequest.RequestCollection = make(map[string]HostHTTPRequest)
 	op.setVersionToSemVar()
@@ -57,25 +63,26 @@ func (op *HTTPSSyncCatalogOp) setupClusterHTTPRequest(hosts []string) {
 		}
 		op.clusterHTTPRequest.RequestCollection[host] = httpRequest
 	}
+
+	return nil
 }
 
-func (op *HTTPSSyncCatalogOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *HTTPSSyncCatalogOp) prepare(execContext *OpEngineExecContext) error {
 	execContext.dispatcher.Setup(op.hosts)
-	op.setupClusterHTTPRequest(op.hosts)
 
-	return MakeClusterOpResultPass()
+	return op.setupClusterHTTPRequest(op.hosts)
 }
 
-func (op *HTTPSSyncCatalogOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
-	if err := op.execute(execContext); err != nil {
-		return MakeClusterOpResultException()
+func (op *HTTPSSyncCatalogOp) execute(execContext *OpEngineExecContext) error {
+	if err := op.runExecute(execContext); err != nil {
+		return err
 	}
 
 	return op.processResult(execContext)
 }
 
-func (op *HTTPSSyncCatalogOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
-	success := true
+func (op *HTTPSSyncCatalogOp) processResult(_ *OpEngineExecContext) error {
+	var allErrs error
 
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
@@ -86,26 +93,22 @@ func (op *HTTPSSyncCatalogOp) processResult(execContext *OpEngineExecContext) Cl
 			// {"new_truncation_version": "18"}
 			syncCatalogRsp, err := op.parseAndCheckMapResponse(host, result.content)
 			if err != nil {
-				success = false
+				allErrs = errors.Join(allErrs, err)
 				continue
 			}
 			version, ok := syncCatalogRsp["new_truncation_version"]
 			if !ok {
-				vlog.LogError(`[%s] response does not contain field "new_truncation_version"`, op.name)
-				success = false
+				err = fmt.Errorf(`[%s] response does not contain field "new_truncation_version"`, op.name)
+				allErrs = errors.Join(allErrs, err)
 			}
 			vlog.LogPrintInfo(`[%s] the_latest_truncation_catalog_version: %s"`, op.name, version)
 		} else {
-			success = false
+			allErrs = errors.Join(allErrs, result.err)
 		}
 	}
-
-	if success {
-		return MakeClusterOpResultPass()
-	}
-	return MakeClusterOpResultFail()
+	return allErrs
 }
 
-func (op *HTTPSSyncCatalogOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *HTTPSSyncCatalogOp) finalize(_ *OpEngineExecContext) error {
+	return nil
 }

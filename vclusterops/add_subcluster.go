@@ -79,11 +79,6 @@ func (options *VAddSubclusterOptions) validateRequiredOptions() error {
 	if *options.SCName == "" {
 		return fmt.Errorf("must specify a subcluster name")
 	}
-	err = util.ValidateName(*options.SCName, "subcluster")
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -103,10 +98,6 @@ func (options *VAddSubclusterOptions) validateExtraOptions() error {
 	}
 
 	if *options.CloneSC != "" {
-		err := util.ValidateName(*options.CloneSC, "clone subcluster")
-		if err != nil {
-			return err
-		}
 		// TODO remove this log after we supported subcluster clone
 		vlog.LogPrintWarningln("option CloneSC is not implemented yet so it will be ignored")
 	}
@@ -177,10 +168,8 @@ func (options *VAddSubclusterOptions) ValidateAnalyzeOptions(config *ClusterConf
 	if err := options.validateParseOptions(config); err != nil {
 		return err
 	}
-	if err := options.analyzeOptions(); err != nil {
-		return err
-	}
-	return nil
+	err := options.analyzeOptions()
+	return err
 }
 
 // VAddSubcluster can add a new subcluster to a running database
@@ -215,7 +204,7 @@ func (vcc *VClusterCommands) VAddSubcluster(options *VAddSubclusterOptions) erro
 
 	instructions, err := produceAddSubclusterInstructions(&addSubclusterInfo, options)
 	if err != nil {
-		vlog.LogPrintError("fail to produce instructions, %w", err)
+		vlog.LogPrintError("fail to produce instructions, %s", err)
 		return err
 	}
 
@@ -226,7 +215,7 @@ func (vcc *VClusterCommands) VAddSubcluster(options *VAddSubclusterOptions) erro
 	// Give the instructions to the VClusterOpEngine to run
 	runError := clusterOpEngine.Run()
 	if runError != nil {
-		vlog.LogPrintError("fail to add subcluster %s, %w", addSubclusterInfo.SCName, runError)
+		vlog.LogPrintError("fail to add subcluster %s, %s", addSubclusterInfo.SCName, runError)
 		return runError
 	}
 
@@ -258,14 +247,23 @@ func produceAddSubclusterInstructions(addSubclusterInfo *VAddSubclusterInfo, opt
 	}
 
 	username := *options.UserName
-	httpsGetUpNodesOp := MakeHTTPSGetUpNodesOp("HTTPSGetUpNodesOp", addSubclusterInfo.DBName, addSubclusterInfo.Hosts,
+	httpsGetUpNodesOp, err := makeHTTPSGetUpNodesOp(addSubclusterInfo.DBName, addSubclusterInfo.Hosts,
 		usePassword, username, addSubclusterInfo.Password)
+	if err != nil {
+		return instructions, err
+	}
 
-	httpsAddSubclusterOp := MakeHTTPSAddSubclusterOp("HTTPSAddSubclusterOp", usePassword, username, addSubclusterInfo.Password,
+	httpsAddSubclusterOp, err := makeHTTPSAddSubclusterOp(usePassword, username, addSubclusterInfo.Password,
 		addSubclusterInfo.SCName, addSubclusterInfo.IsPrimary, addSubclusterInfo.ControlSetSize)
+	if err != nil {
+		return instructions, err
+	}
 
-	httpsCheckSubclusterOp := MakeHTTPSCheckSubclusterOp("HTTPSCheckSubclusterOp", usePassword, username, addSubclusterInfo.Password,
+	httpsCheckSubclusterOp, err := makeHTTPSCheckSubclusterOp(usePassword, username, addSubclusterInfo.Password,
 		addSubclusterInfo.SCName, addSubclusterInfo.IsPrimary, addSubclusterInfo.ControlSetSize)
+	if err != nil {
+		return instructions, err
+	}
 
 	instructions = append(instructions,
 		&httpsGetUpNodesOp,

@@ -15,19 +15,21 @@
 
 package vclusterops
 
+import "errors"
+
 type NMAHealthOp struct {
 	OpBase
 }
 
-func MakeNMAHealthOp(opName string, hosts []string) NMAHealthOp {
+func makeNMAHealthOp(hosts []string) NMAHealthOp {
 	nmaHealthOp := NMAHealthOp{}
-	nmaHealthOp.name = opName
+	nmaHealthOp.name = "NMAHealthOp"
 	nmaHealthOp.hosts = hosts
 	return nmaHealthOp
 }
 
 // setupClusterHTTPRequest works as the module setup in Admintools
-func (op *NMAHealthOp) setupClusterHTTPRequest(hosts []string) {
+func (op *NMAHealthOp) setupClusterHTTPRequest(hosts []string) error {
 	op.clusterHTTPRequest = ClusterHTTPRequest{}
 	op.clusterHTTPRequest.RequestCollection = make(map[string]HostHTTPRequest)
 	op.setVersionToSemVar()
@@ -38,45 +40,42 @@ func (op *NMAHealthOp) setupClusterHTTPRequest(hosts []string) {
 		httpRequest.BuildNMAEndpoint("health")
 		op.clusterHTTPRequest.RequestCollection[host] = httpRequest
 	}
+
+	return nil
 }
 
-func (op *NMAHealthOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *NMAHealthOp) prepare(execContext *OpEngineExecContext) error {
 	execContext.dispatcher.Setup(op.hosts)
-	op.setupClusterHTTPRequest(op.hosts)
 
-	return MakeClusterOpResultPass()
+	return op.setupClusterHTTPRequest(op.hosts)
 }
 
-func (op *NMAHealthOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
-	if err := op.execute(execContext); err != nil {
-		return MakeClusterOpResultException()
+func (op *NMAHealthOp) execute(execContext *OpEngineExecContext) error {
+	if err := op.runExecute(execContext); err != nil {
+		return err
 	}
 
 	return op.processResult(execContext)
 }
 
-func (op *NMAHealthOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *NMAHealthOp) finalize(_ *OpEngineExecContext) error {
+	return nil
 }
 
-func (op *NMAHealthOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
-	success := true
-
+func (op *NMAHealthOp) processResult(_ *OpEngineExecContext) error {
+	var allErrs error
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
 
 		if result.isPassing() {
 			_, err := op.parseAndCheckMapResponse(host, result.content)
 			if err != nil {
-				success = false
+				return errors.Join(allErrs, err)
 			}
 		} else {
-			success = false
+			allErrs = errors.Join(allErrs, result.err)
 		}
 	}
 
-	if success {
-		return MakeClusterOpResultPass()
-	}
-	return MakeClusterOpResultFail()
+	return allErrs
 }

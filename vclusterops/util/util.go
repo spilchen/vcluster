@@ -37,6 +37,8 @@ import (
 
 const (
 	keyValueArrayLen = 2
+	ipv4Str          = "IPv4"
+	ipv6Str          = "IPv6"
 )
 
 func GetJSONLogErrors(responseContent string, responseObj any, opName string) error {
@@ -81,6 +83,19 @@ func MapKeyDiff[M ~map[K]V, K comparable, V any](m, n M) []K {
 	}
 
 	return diff
+}
+
+// FilterMapByKey, given a map and a slice of keys, returns a map,
+// which is a subset of the original, that contains only keys in
+// from the given slice.
+func FilterMapByKey[M ~map[K]V, K comparable, V any](m M, n []K) M {
+	result := make(M)
+	for _, k := range n {
+		if v, found := m[k]; found {
+			result[k] = v
+		}
+	}
+	return result
 }
 
 func CheckPathExist(filePath string) bool {
@@ -144,6 +159,25 @@ func IsIPv4(ip string) bool {
 
 func IsIPv6(ip string) bool {
 	return net.ParseIP(ip).To16() != nil
+}
+
+func AddressCheck(address string, ipv6 bool) error {
+	checkPassed := false
+	if ipv6 {
+		checkPassed = IsIPv6(address)
+	} else {
+		checkPassed = IsIPv4(address)
+	}
+
+	if !checkPassed {
+		ipVersion := ipv4Str
+		if ipv6 {
+			ipVersion = ipv6Str
+		}
+		return fmt.Errorf("%s in the re-ip file is not a valid %s address", address, ipVersion)
+	}
+
+	return nil
 }
 
 func ResolveToIPAddrs(hostname string, ipv6 bool) ([]string, error) {
@@ -262,10 +296,11 @@ func CheckMissingFields(object any) error {
 }
 
 // when password is given, the user name cannot be empty
-func ValidateUsernameAndPassword(useHTTPPassword bool, userName string) {
+func ValidateUsernameAndPassword(opName string, useHTTPPassword bool, userName string) error {
 	if useHTTPPassword && userName == "" {
-		panic("[Programmer error] should provide a username for using basic authentication for HTTPS requests")
+		return fmt.Errorf("[%s] should provide a username for using basic authentication for HTTPS requests", opName)
 	}
+	return nil
 }
 
 const (
@@ -441,4 +476,31 @@ func GenVNodeName(vnodes map[string]string, dbName string, hostCount int) (strin
 		}
 	}
 	return "", false
+}
+
+// CopySlice returns a copy of a slice.
+func CopySlice[T any](original []T) []T {
+	if original == nil {
+		return nil
+	}
+
+	var copyOfList = make([]T, len(original))
+	copy(copyOfList, original)
+
+	return copyOfList
+}
+
+// CopyMap returns a copy of a map.
+func CopyMap[K comparable, V any](original map[K]V) map[K]V {
+	if original == nil {
+		return nil
+	}
+
+	copyOfMap := make(map[K]V)
+
+	for key, value := range original {
+		copyOfMap[key] = value
+	}
+
+	return copyOfMap
 }

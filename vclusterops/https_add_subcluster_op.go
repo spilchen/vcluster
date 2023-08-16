@@ -17,36 +17,39 @@ package vclusterops
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/vertica/vcluster/vclusterops/util"
-	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
 type HTTPSAddSubclusterOp struct {
 	OpBase
-	OpHTTPBase
+	OpHTTPSBase
 	hostRequestBodyMap map[string]string
 	scName             string
 	isSecondary        bool
 	ctlSetSize         int
 }
 
-func MakeHTTPSAddSubclusterOp(opName string, useHTTPPassword bool, userName string, httpsPassword *string,
-	scName string, isPrimary bool, ctlSetSize int) HTTPSAddSubclusterOp {
+func makeHTTPSAddSubclusterOp(useHTTPPassword bool, userName string, httpsPassword *string,
+	scName string, isPrimary bool, ctlSetSize int) (HTTPSAddSubclusterOp, error) {
 	httpsAddSubclusterOp := HTTPSAddSubclusterOp{}
-	httpsAddSubclusterOp.name = opName
+	httpsAddSubclusterOp.name = "HTTPSAddSubclusterOp"
 	httpsAddSubclusterOp.scName = scName
 	httpsAddSubclusterOp.isSecondary = !isPrimary
 	httpsAddSubclusterOp.ctlSetSize = ctlSetSize
 
 	httpsAddSubclusterOp.useHTTPPassword = useHTTPPassword
 	if useHTTPPassword {
-		util.ValidateUsernameAndPassword(useHTTPPassword, userName)
+		err := util.ValidateUsernameAndPassword(httpsAddSubclusterOp.name, useHTTPPassword, userName)
+		if err != nil {
+			return httpsAddSubclusterOp, err
+		}
 		httpsAddSubclusterOp.userName = userName
 		httpsAddSubclusterOp.httpsPassword = httpsPassword
 	}
-	return httpsAddSubclusterOp
+	return httpsAddSubclusterOp, nil
 }
 
 type addSubclusterRequestData struct {
@@ -73,7 +76,7 @@ func (op *HTTPSAddSubclusterOp) setupRequestBody(hosts []string) error {
 	return nil
 }
 
-func (op *HTTPSAddSubclusterOp) setupClusterHTTPRequest(hosts []string) {
+func (op *HTTPSAddSubclusterOp) setupClusterHTTPRequest(hosts []string) error {
 	op.clusterHTTPRequest = ClusterHTTPRequest{}
 	op.clusterHTTPRequest.RequestCollection = make(map[string]HostHTTPRequest)
 	op.setVersionToSemVar()
@@ -89,44 +92,45 @@ func (op *HTTPSAddSubclusterOp) setupClusterHTTPRequest(hosts []string) {
 		httpRequest.RequestData = op.hostRequestBodyMap[host]
 		op.clusterHTTPRequest.RequestCollection[host] = httpRequest
 	}
+
+	return nil
 }
 
-func (op *HTTPSAddSubclusterOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *HTTPSAddSubclusterOp) prepare(execContext *OpEngineExecContext) error {
 	if len(execContext.upHosts) == 0 {
-		vlog.LogError(`[%s] Cannot find any up hosts in OpEngineExecContext`, op.name)
-		return MakeClusterOpResultFail()
+		return fmt.Errorf(`[%s] Cannot find any up hosts in OpEngineExecContext`, op.name)
 	}
 	// use first up host to execute https post request, this host will be the initiator
 	hosts := []string{execContext.upHosts[0]}
 	err := op.setupRequestBody(hosts)
 	if err != nil {
-		return MakeClusterOpResultFail()
+		return err
 	}
 	execContext.dispatcher.Setup(hosts)
-	op.setupClusterHTTPRequest(hosts)
 
-	return MakeClusterOpResultPass()
+	return op.setupClusterHTTPRequest(hosts)
 }
 
-func (op *HTTPSAddSubclusterOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
-	if err := op.execute(execContext); err != nil {
-		return MakeClusterOpResultException()
+func (op *HTTPSAddSubclusterOp) execute(execContext *OpEngineExecContext) error {
+	if err := op.runExecute(execContext); err != nil {
+		return err
 	}
 
 	return op.processResult(execContext)
 }
 
-func (op *HTTPSAddSubclusterOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
-	success := false
+func (op *HTTPSAddSubclusterOp) processResult(_ *OpEngineExecContext) error {
+	var allErrs error
 
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
 
 		if result.IsUnauthorizedRequest() {
 			// skip checking response from other nodes because we will get the same error there
-			break
+			return result.err
 		}
 		if !result.isPassing() {
+			allErrs = errors.Join(allErrs, result.err)
 			// try processing other hosts' responses when the current host has some server errors
 			continue
 		}
@@ -140,20 +144,15 @@ func (op *HTTPSAddSubclusterOp) processResult(execContext *OpEngineExecContext) 
 		*/
 		_, err := op.parseAndCheckMapResponse(host, result.content)
 		if err != nil {
-			vlog.LogPrintError(`[%s] fail to parse result on host %s, details: %w`, op.name, host, err)
-			break
+			return fmt.Errorf(`[%s] fail to parse result on host %s, details: %w`, op.name, host, err)
 		}
 
-		success = true
-		break
+		return nil
 	}
 
-	if success {
-		return MakeClusterOpResultPass()
-	}
-	return MakeClusterOpResultFail()
+	return allErrs
 }
 
-func (op *HTTPSAddSubclusterOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *HTTPSAddSubclusterOp) finalize(_ *OpEngineExecContext) error {
+	return nil
 }

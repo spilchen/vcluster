@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/go-logr/logr"
 	"github.com/vertica/vcluster/vclusterops"
 	"github.com/vertica/vcluster/vclusterops/vlog"
 )
@@ -37,8 +38,8 @@ type CmdConfig struct {
 	ConfigHandler
 }
 
-func MakeCmdConfig() CmdConfig {
-	newCmd := CmdConfig{}
+func makeCmdConfig() *CmdConfig {
+	newCmd := &CmdConfig{}
 	newCmd.parser = flag.NewFlagSet("config", flag.ExitOnError)
 	newCmd.show = newCmd.parser.Bool("show", false, "show the content of the config file")
 	newCmd.directory = newCmd.parser.String(
@@ -82,7 +83,7 @@ func (c *CmdConfig) Analyze() error {
 	return nil
 }
 
-func (c *CmdConfig) Run() error {
+func (c *CmdConfig) Run(_ logr.Logger) error {
 	if *c.show {
 		configFilePath := filepath.Join(*c.directory, vclusterops.ConfigFileName)
 		fileBytes, err := os.ReadFile(configFilePath)

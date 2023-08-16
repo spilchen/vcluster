@@ -16,29 +16,34 @@
 package vclusterops
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/vertica/vcluster/vclusterops/util"
-	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
 type HTTPSReloadSpreadOp struct {
 	OpBase
-	OpHTTPBase
+	OpHTTPSBase
 }
 
-func MakeHTTPSReloadSpreadOp(opName string, hosts []string, useHTTPPassword bool,
-	userName string, httpsPassword *string) HTTPSReloadSpreadOp {
+func makeHTTPSReloadSpreadOp(hosts []string, useHTTPPassword bool,
+	userName string, httpsPassword *string) (HTTPSReloadSpreadOp, error) {
 	httpsReloadSpreadOp := HTTPSReloadSpreadOp{}
-	httpsReloadSpreadOp.name = opName
+	httpsReloadSpreadOp.name = "HTTPSReloadSpreadOp"
 	httpsReloadSpreadOp.hosts = hosts
 	httpsReloadSpreadOp.useHTTPPassword = useHTTPPassword
 
-	util.ValidateUsernameAndPassword(useHTTPPassword, userName)
+	err := util.ValidateUsernameAndPassword(httpsReloadSpreadOp.name, useHTTPPassword, userName)
+	if err != nil {
+		return httpsReloadSpreadOp, err
+	}
 	httpsReloadSpreadOp.userName = userName
 	httpsReloadSpreadOp.httpsPassword = httpsPassword
-	return httpsReloadSpreadOp
+	return httpsReloadSpreadOp, nil
 }
 
-func (op *HTTPSReloadSpreadOp) setupClusterHTTPRequest(hosts []string) {
+func (op *HTTPSReloadSpreadOp) setupClusterHTTPRequest(hosts []string) error {
 	op.clusterHTTPRequest = ClusterHTTPRequest{}
 	op.clusterHTTPRequest.RequestCollection = make(map[string]HostHTTPRequest)
 	op.setVersionToSemVar()
@@ -53,31 +58,36 @@ func (op *HTTPSReloadSpreadOp) setupClusterHTTPRequest(hosts []string) {
 		}
 		op.clusterHTTPRequest.RequestCollection[host] = httpRequest
 	}
+
+	return nil
 }
 
-func (op *HTTPSReloadSpreadOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *HTTPSReloadSpreadOp) prepare(execContext *OpEngineExecContext) error {
+	// If the host input is an empty string, we find up hosts to update the host input
+	if len(op.hosts) == 0 {
+		op.hosts = execContext.upHosts
+	}
 	execContext.dispatcher.Setup(op.hosts)
-	op.setupClusterHTTPRequest(op.hosts)
 
-	return MakeClusterOpResultPass()
+	return op.setupClusterHTTPRequest(op.hosts)
 }
 
-func (op *HTTPSReloadSpreadOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
-	if err := op.execute(execContext); err != nil {
-		return MakeClusterOpResultException()
+func (op *HTTPSReloadSpreadOp) execute(execContext *OpEngineExecContext) error {
+	if err := op.runExecute(execContext); err != nil {
+		return err
 	}
 
 	return op.processResult(execContext)
 }
 
-func (op *HTTPSReloadSpreadOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
-	success := true
+func (op *HTTPSReloadSpreadOp) processResult(_ *OpEngineExecContext) error {
+	var allErrs error
 
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
 
 		if !result.isPassing() {
-			success = false
+			allErrs = errors.Join(allErrs, result.err)
 			continue
 		}
 
@@ -86,24 +96,21 @@ func (op *HTTPSReloadSpreadOp) processResult(execContext *OpEngineExecContext) C
 		// {"detail": "Reloaded"}
 		reloadSpreadRsp, err := op.parseAndCheckMapResponse(host, result.content)
 		if err != nil {
-			vlog.LogPrintError("[%s] fail to parse result on host %s, details: %w", op.name, host, err)
-			success = false
+			err = fmt.Errorf("[%s] fail to parse result on host %s, details: %w", op.name, host, err)
+			allErrs = errors.Join(allErrs, err)
 			continue
 		}
 
 		// verify if the response's content is correct
 		if reloadSpreadRsp["detail"] != "Reloaded" {
-			vlog.LogError(`[%s] response detail should be 'Reloaded' but got '%s'`, op.name, reloadSpreadRsp["detail"])
-			success = false
+			err = fmt.Errorf(`[%s] response detail should be 'Reloaded' but got '%s'`, op.name, reloadSpreadRsp["detail"])
+			allErrs = errors.Join(allErrs, err)
 		}
 	}
 
-	if success {
-		return MakeClusterOpResultPass()
-	}
-	return MakeClusterOpResultFail()
+	return allErrs
 }
 
-func (op *HTTPSReloadSpreadOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *HTTPSReloadSpreadOp) finalize(_ *OpEngineExecContext) error {
+	return nil
 }

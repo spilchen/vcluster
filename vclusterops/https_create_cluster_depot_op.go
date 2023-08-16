@@ -16,30 +16,32 @@
 package vclusterops
 
 import (
+	"errors"
+	"fmt"
+
 	"golang.org/x/exp/slices"
 
 	"github.com/vertica/vcluster/vclusterops/util"
-	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
 type HTTPSCreateDepotOp struct {
 	OpBase
-	OpHTTPBase
+	OpHTTPSBase
 	NodeDepotPaths map[string]string
 	RequestParams  map[string]string
 }
 
-func MakeHTTPSCreateDepotOp(opName string, vdb *VCoordinationDatabase, hosts []string,
-	useHTTPPassword bool, userName string, httpsPassword *string) HTTPSCreateDepotOp {
+func makeHTTPSCreateClusterDepotOp(vdb *VCoordinationDatabase, hosts []string,
+	useHTTPPassword bool, userName string, httpsPassword *string) (HTTPSCreateDepotOp, error) {
 	httpsCreateDepotOp := HTTPSCreateDepotOp{}
-	httpsCreateDepotOp.name = opName
+	httpsCreateDepotOp.name = "HTTPSCreateDepotOp"
 	httpsCreateDepotOp.hosts = hosts
 	httpsCreateDepotOp.useHTTPPassword = useHTTPPassword
 
 	// store nodeName-depotPath values for later http response verification
 	httpsCreateDepotOp.NodeDepotPaths = make(map[string]string)
-	for _, vNode := range vdb.HostNodeMap {
-		httpsCreateDepotOp.NodeDepotPaths[vNode.Name] = vNode.DepotPath
+	for host := range vdb.HostNodeMap {
+		httpsCreateDepotOp.NodeDepotPaths[vdb.HostNodeMap[host].Name] = vdb.HostNodeMap[host].DepotPath
 	}
 
 	// set the query params, "path" is required, "size" is optional
@@ -49,13 +51,16 @@ func MakeHTTPSCreateDepotOp(opName string, vdb *VCoordinationDatabase, hosts []s
 		httpsCreateDepotOp.RequestParams["size"] = vdb.DepotSize
 	}
 
-	util.ValidateUsernameAndPassword(useHTTPPassword, userName)
+	err := util.ValidateUsernameAndPassword(httpsCreateDepotOp.name, useHTTPPassword, userName)
+	if err != nil {
+		return httpsCreateDepotOp, err
+	}
 	httpsCreateDepotOp.userName = userName
 	httpsCreateDepotOp.httpsPassword = httpsPassword
-	return httpsCreateDepotOp
+	return httpsCreateDepotOp, nil
 }
 
-func (op *HTTPSCreateDepotOp) setupClusterHTTPRequest(hosts []string) {
+func (op *HTTPSCreateDepotOp) setupClusterHTTPRequest(hosts []string) error {
 	op.clusterHTTPRequest = ClusterHTTPRequest{}
 	op.clusterHTTPRequest.RequestCollection = make(map[string]HostHTTPRequest)
 	op.setVersionToSemVar()
@@ -71,18 +76,19 @@ func (op *HTTPSCreateDepotOp) setupClusterHTTPRequest(hosts []string) {
 		httpRequest.QueryParams = op.RequestParams
 		op.clusterHTTPRequest.RequestCollection[host] = httpRequest
 	}
+
+	return nil
 }
 
-func (op *HTTPSCreateDepotOp) Prepare(execContext *OpEngineExecContext) ClusterOpResult {
+func (op *HTTPSCreateDepotOp) prepare(execContext *OpEngineExecContext) error {
 	execContext.dispatcher.Setup(op.hosts)
-	op.setupClusterHTTPRequest(op.hosts)
 
-	return MakeClusterOpResultPass()
+	return op.setupClusterHTTPRequest(op.hosts)
 }
 
-func (op *HTTPSCreateDepotOp) Execute(execContext *OpEngineExecContext) ClusterOpResult {
-	if err := op.execute(execContext); err != nil {
-		return MakeClusterOpResultException()
+func (op *HTTPSCreateDepotOp) execute(execContext *OpEngineExecContext) error {
+	if err := op.runExecute(execContext); err != nil {
+		return err
 	}
 
 	return op.processResult(execContext)
@@ -98,14 +104,14 @@ type CreateDepotClusterRsp struct {
 	ClusterRsp []CreateDepotNodeRsp `json:"depots"`
 }
 
-func (op *HTTPSCreateDepotOp) processResult(execContext *OpEngineExecContext) ClusterOpResult {
-	success := true
+func (op *HTTPSCreateDepotOp) processResult(_ *OpEngineExecContext) error {
+	var allErrs error
 
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
 
 		if !result.isPassing() {
-			success = false
+			allErrs = errors.Join(allErrs, result.err)
 			continue
 		}
 
@@ -130,8 +136,8 @@ func (op *HTTPSCreateDepotOp) processResult(execContext *OpEngineExecContext) Cl
 		createDepotClusterRsp := CreateDepotClusterRsp{}
 		err := op.parseAndCheckResponse(host, result.content, &createDepotClusterRsp)
 		if err != nil {
-			vlog.LogPrintError(`[%s] fail to parse result on host %s, details: %w`, op.name, host, err)
-			success = false
+			err = fmt.Errorf(`[%s] fail to parse result on host %s, details: %w`, op.name, host, err)
+			allErrs = errors.Join(allErrs, err)
 			continue
 		}
 
@@ -141,28 +147,25 @@ func (op *HTTPSCreateDepotOp) processResult(execContext *OpEngineExecContext) Cl
 				return rsp.NodeName == nodeName && rsp.DepotPath == depotPath
 			})
 			if idx == -1 {
-				vlog.LogError(`[%s] create depot %s failed for node %s on host %s`, op.name, depotPath, nodeName, host)
-				success = false
+				err = fmt.Errorf(`[%s] create depot %s failed for node %s on host %s`, op.name, depotPath, nodeName, host)
+				allErrs = errors.Join(allErrs, err)
 				// not break here because we want to log all the failed nodes
 			}
 		}
 		// verify if https response contains some nodes/depots not in the required ones
 		for _, nodeRsp := range createDepotClusterRsp.ClusterRsp {
 			if depotPath, ok := op.NodeDepotPaths[nodeRsp.NodeName]; !ok || depotPath != nodeRsp.DepotPath {
-				vlog.LogError(`[%s] an unwanted depot %s gets created for node %s on host %s`,
+				err = fmt.Errorf(`[%s] an unwanted depot %s gets created for node %s on host %s`,
 					op.name, nodeRsp.DepotPath, nodeRsp.NodeName, host)
-				success = false
+				allErrs = errors.Join(allErrs, err)
 				// not break here because we want to log all the unwanted depots
 			}
 		}
 	}
 
-	if success {
-		return MakeClusterOpResultPass()
-	}
-	return MakeClusterOpResultFail()
+	return allErrs
 }
 
-func (op *HTTPSCreateDepotOp) Finalize(execContext *OpEngineExecContext) ClusterOpResult {
-	return MakeClusterOpResultPass()
+func (op *HTTPSCreateDepotOp) finalize(_ *OpEngineExecContext) error {
+	return nil
 }

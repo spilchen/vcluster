@@ -28,7 +28,7 @@ type httpsReIPOp struct {
 	hostToReIP    []string
 	reIPList      map[string]ReIPInfo
 	nodeNamesList []string
-	upHost        string
+	upHost        []string
 }
 
 func makeHTTPSReIPOp(nodeNamesList, hostToReIP []string,
@@ -57,7 +57,7 @@ func (op *httpsReIPOp) setupClusterHTTPRequest(hosts []string) error {
 	op.clusterHTTPRequest.RequestCollection = make(map[string]HostHTTPRequest)
 	op.setVersionToSemVar()
 
-	for _, host := range hosts {
+	for i, host := range hosts {
 		httpRequest := HostHTTPRequest{}
 		httpRequest.Method = PutMethod
 		nodesInfo, ok := op.reIPList[host]
@@ -74,7 +74,7 @@ func (op *httpsReIPOp) setupClusterHTTPRequest(hosts []string) error {
 			httpRequest.Password = op.httpsPassword
 			httpRequest.Username = op.userName
 		}
-		op.clusterHTTPRequest.RequestCollection[op.upHost] = httpRequest
+		op.clusterHTTPRequest.RequestCollection[op.upHost[i]] = httpRequest
 	}
 
 	return nil
@@ -99,9 +99,9 @@ func (op *httpsReIPOp) prepare(execContext *OpEngineExecContext) error {
 		op.reIPList[nodeNameToReIP] = info
 	}
 
-	// pick any up host to run http re-ip endpoint
-	op.upHost = execContext.upHosts[0]
-	execContext.dispatcher.Setup(op.nodeNamesList)
+	// use up hosts to execute the HTTP re-IP endpoint
+	op.upHost = execContext.upHosts
+	execContext.dispatcher.Setup(op.upHost)
 	return op.setupClusterHTTPRequest(op.nodeNamesList)
 }
 

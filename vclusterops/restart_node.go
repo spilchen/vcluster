@@ -1,6 +1,8 @@
 package vclusterops
 
 import (
+	"fmt"
+
 	"github.com/vertica/vcluster/vclusterops/util"
 	"github.com/vertica/vcluster/vclusterops/vlog"
 )
@@ -41,6 +43,9 @@ func (options *VRestartNodesOptions) validateRequiredOptions() error {
 	err := options.ValidateBaseOptions("restart_node")
 	if err != nil {
 		return err
+	}
+	if len(options.Nodes) == 0 {
+		return fmt.Errorf("must specify a list of NODENAME=REIPHOST pairs")
 	}
 
 	return nil
@@ -147,9 +152,12 @@ func (vcc *VClusterCommands) VRestartNodes(options *VRestartNodesOptions) error 
 		}
 	}
 
-	// if we find any nodes that need to re-ip, we should restart these nodes
+	// VER-88552 will improve this corner case
 	if len(restartNodeInfo.ReIPList) != 0 {
-		vcc.Log.Info("Need to re-ip some nodes", "ReIPList", restartNodeInfo.ReIPList, "HostsSkipping", hostsNoNeedToReIP)
+		if len(hostsNoNeedToReIP) != 0 {
+			vlog.LogInfo("The following requested hosts will not be restarted since their catalog IP is not changing: %s", hostsNoNeedToReIP)
+		}
+		// if we find any nodes that need to re-ip, we should restart these nodes
 		restartNodeInfo.HostsToRestart = restartNodeInfo.ReIPList
 	} else {
 		// otherwise, we restart nodes that do not require re-IP, this scenario arises
@@ -158,7 +166,7 @@ func (vcc *VClusterCommands) VRestartNodes(options *VRestartNodesOptions) error 
 	}
 
 	// produce restart_node instructions
-	instructions, err := vcc.produceRestartNodesInstructions(restartNodeInfo, options, &vdb)
+	instructions, err := produceRestartNodesInstructions(restartNodeInfo, options, &vdb)
 	if err != nil {
 		vlog.LogPrintError("fail to production instructions, %s", err)
 		return err
@@ -195,7 +203,7 @@ func (vcc *VClusterCommands) VRestartNodes(options *VRestartNodesOptions) error 
 //   - restart nodes
 //   - Poll node start up
 //   - sync catalog
-func (vcc *VClusterCommands) produceRestartNodesInstructions(restartNodeInfo *VRestartNodesInfo, options *VRestartNodesOptions,
+func produceRestartNodesInstructions(restartNodeInfo *VRestartNodesInfo, options *VRestartNodesOptions,
 	vdb *VCoordinationDatabase) ([]ClusterOp, error) {
 	var instructions []ClusterOp
 
@@ -218,8 +226,6 @@ func (vcc *VClusterCommands) produceRestartNodesInstructions(restartNodeInfo *VR
 		&nmaVerticaVersionOp,
 		&httpsGetUpNodesOp,
 	)
-
-	vcc.Log.Info("node info", "HostsToRestart", restartNodeInfo.HostsToRestart, "ReIPList", restartNodeInfo.ReIPList)
 
 	// If we identify any nodes that need re-IP, HostsToRestart will contain the nodes that need re-IP.
 	// Otherwise, HostsToRestart will consist of all hosts with IPs recorded in the catalog, which are provided by user input.

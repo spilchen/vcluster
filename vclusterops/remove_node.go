@@ -286,12 +286,16 @@ func produceRemoveNodeInstructions(vdb *VCoordinationDatabase, options *VRemoveN
 		instructions = append(instructions, &httpsRebalanceClusterOp)
 	}
 
-	httpsSpreadRemoveNodeOp, err := makeHTTPSSpreadRemoveNodeOp(options.HostsToRemove, initiatorHost, usePassword,
-		username, password, vdb.HostNodeMap)
-	if err != nil {
-		return instructions, err
-	}
-	instructions = append(instructions, &httpsSpreadRemoveNodeOp)
+	// SPILLY - avoid calling this. If just removing secondary this isn't needed
+	// and can cause issues.
+	/*
+		httpsSpreadRemoveNodeOp, err := makeHTTPSSpreadRemoveNodeOp(options.HostsToRemove, initiatorHost, usePassword,
+			username, password, vdb.HostNodeMap)
+		if err != nil {
+			return instructions, err
+		}
+		instructions = append(instructions, &httpsSpreadRemoveNodeOp)
+	*/
 
 	err = produceDropNodeOps(&instructions, options.HostsToRemove, initiatorHost,
 		usePassword, username, password, vdb.HostNodeMap, vdb.IsEon)

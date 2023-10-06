@@ -39,13 +39,13 @@ func produceTransferConfigOps(instructions *[]ClusterOp, sourceConfigHost, targe
 	var verticaConfContent string
 	nmaDownloadVerticaConfigOp := makeNMADownloadConfigOp(
 		"NMADownloadVerticaConfigOp", sourceConfigHost, "config/vertica", &verticaConfContent, vdb)
-	nmaUploadVerticaConfigOp := makeNMAUploadConfigOp(
-		"NMAUploadVerticaConfigOp", sourceConfigHost, targetHosts, "config/vertica", &verticaConfContent, vdb)
+	nmaUploadVerticaConfigOp := makeNMAUploadConfigOp(vlog.Printer{},
+		"NMAUploadVerticaConfigOp", sourceConfigHost, targetHosts, "config/vertica", &verticaConfContent, vdb, false)
 	var spreadConfContent string
 	nmaDownloadSpreadConfigOp := makeNMADownloadConfigOp(
 		"NMADownloadSpreadConfigOp", sourceConfigHost, "config/spread", &spreadConfContent, vdb)
-	nmaUploadSpreadConfigOp := makeNMAUploadConfigOp(
-		"NMAUploadSpreadConfigOp", sourceConfigHost, targetHosts, "config/spread", &spreadConfContent, vdb)
+	nmaUploadSpreadConfigOp := makeNMAUploadConfigOp(vlog.Printer{},
+		"NMAUploadSpreadConfigOp", sourceConfigHost, targetHosts, "config/spread", &spreadConfContent, vdb, false)
 	*instructions = append(*instructions,
 		&nmaDownloadVerticaConfigOp,
 		&nmaUploadVerticaConfigOp,

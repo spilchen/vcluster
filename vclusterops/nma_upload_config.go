@@ -16,9 +16,12 @@
 package vclusterops
 
 import (
+	crand "crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 
 	"github.com/vertica/vcluster/vclusterops/util"
 	"github.com/vertica/vcluster/vclusterops/vlog"
@@ -33,6 +36,7 @@ type NMAUploadConfigOp struct {
 	sourceConfigHost   []string
 	destHosts          []string
 	vdb                *VCoordinationDatabase
+	encryptSpread      bool
 }
 
 type uploadConfigRequestData struct {
@@ -48,6 +52,7 @@ type uploadConfigRequestData struct {
 // To add nodes to the DB, use the bootstrapHost value for sourceConfigHost, a list of newly added nodes
 // for newNodeHosts and provide a nil value for hosts.
 func makeNMAUploadConfigOp(
+	log vlog.Printer,
 	opName string,
 	sourceConfigHost []string, // source host for transferring configuration files, specifically, it is
 	// 1. the bootstrap host when creating the database
@@ -56,8 +61,10 @@ func makeNMAUploadConfigOp(
 	endpoint string,
 	fileContent *string,
 	vdb *VCoordinationDatabase,
+	encryptSpread bool,
 ) NMAUploadConfigOp {
 	nmaUploadConfigOp := NMAUploadConfigOp{}
+	nmaUploadConfigOp.log = log
 	nmaUploadConfigOp.name = opName
 	nmaUploadConfigOp.endpoint = endpoint
 	nmaUploadConfigOp.fileContent = fileContent
@@ -65,12 +72,23 @@ func makeNMAUploadConfigOp(
 	nmaUploadConfigOp.sourceConfigHost = sourceConfigHost
 	nmaUploadConfigOp.destHosts = targetHosts
 	nmaUploadConfigOp.vdb = vdb
+	nmaUploadConfigOp.encryptSpread = encryptSpread
 
 	return nmaUploadConfigOp
 }
 
 func (op *NMAUploadConfigOp) setupRequestBody(hosts []string) error {
 	op.hostRequestBodyMap = make(map[string]string)
+
+	if op.encryptSpread {
+		op.log.Info("modifying spread.conf for encryption")
+		spreadKey, err := generateSpreadKey()
+		if err != nil {
+			return err
+		}
+		spreadKeyPayload := fmt.Sprintf(`{%q: %q}`, generateKeyID(), spreadKey)
+		*op.fileContent = fmt.Sprintf("%s\n# VSpreadKey: %s", *op.fileContent, spreadKeyPayload)
+	}
 
 	for _, host := range hosts {
 		uploadConfigData := uploadConfigRequestData{}
@@ -191,4 +209,23 @@ func (op *NMAUploadConfigOp) processResult(_ *OpEngineExecContext) error {
 	}
 
 	return allErrs
+}
+
+func generateSpreadKey() (string, error) {
+	const spreadKeySize = 32
+	bytes := make([]byte, spreadKeySize)
+	if _, err := crand.Read(bytes); err != nil {
+		return "", fmt.Errorf("failed to generate random bytes for spread: %w", err)
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+func generateKeyID() string {
+	const keyLength = 4
+	var availChars = []byte("abcdefghijklmnopqrstuvwxyz0123456789")
+	b := make([]byte, keyLength)
+	for i := range b {
+		b[i] = availChars[rand.Intn(len(availChars))] //nolint:gosec
+	}
+	return string(b)
 }

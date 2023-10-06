@@ -384,6 +384,20 @@ func (opt *VCreateDatabaseOptions) ValidateAnalyzeOptions() error {
 	return opt.analyzeOptions()
 }
 
+func (opt *VCreateDatabaseOptions) isVerticaSpreadEncryptionEnabled() bool {
+	const (
+		EncryptSpreadCommConfigName  = "encryptspreadcomm"
+		EncryptSpreadCommTypeVertica = "vertica"
+	)
+	// We cannot use the map lookup because the key name is case insensitive.
+	for key, val := range opt.ConfigurationParameters {
+		if strings.EqualFold(key, EncryptSpreadCommConfigName) {
+			return val == EncryptSpreadCommTypeVertica
+		}
+	}
+	return false
+}
+
 func (vcc *VClusterCommands) VCreateDatabase(options *VCreateDatabaseOptions) (VCoordinationDatabase, error) {
 	vcc.Log.Info("starting VCreateDatabase")
 
@@ -513,13 +527,6 @@ func (vcc *VClusterCommands) produceCreateDBBootstrapInstructions(
 		return instructions, err
 	}
 
-	nmaStartNodeOp := makeNMAStartNodeOp(bootstrapHost)
-
-	httpsPollBootstrapNodeStateOp, err := makeHTTPSPollNodeStateOp(bootstrapHost, true, *options.UserName, options.Password)
-	if err != nil {
-		return instructions, err
-	}
-
 	instructions = append(instructions,
 		&nmaHealthOp,
 		&nmaVerticaVersionOp,
@@ -528,11 +535,51 @@ func (vcc *VClusterCommands) produceCreateDBBootstrapInstructions(
 		&nmaNetworkProfileOp,
 		&nmaBootstrapCatalogOp,
 		&nmaReadCatalogEditorOp,
+	)
+
+	if options.isVerticaSpreadEncryptionEnabled() {
+		instructions = append(instructions,
+			vcc.enableSpreadEncryption(vdb, options)...,
+		)
+	} else {
+		vcc.Log.Info("spread encryption is not enabled")
+	}
+
+	nmaStartNodeOp := makeNMAStartNodeOp(bootstrapHost)
+
+	httpsPollBootstrapNodeStateOp, err := makeHTTPSPollNodeStateOp(bootstrapHost, true, *options.UserName, options.Password)
+	if err != nil {
+		return instructions, err
+	}
+
+	instructions = append(instructions,
 		&nmaStartNodeOp,
 		&httpsPollBootstrapNodeStateOp,
 	)
 
 	return instructions, nil
+}
+
+func (vcc *VClusterCommands) enableSpreadEncryption(
+	vdb *VCoordinationDatabase, options *VCreateDatabaseOptions) []ClusterOp {
+	vcc.Log.Info("adding instructions to enabled spread encryption")
+	var spreadConfContent string
+	// This is quite the hack to make spread encryption work without using the
+	// new NMA endpoint. This library will make the edit to spread.conf directly
+	// then send out the update. We only need to do this at the bootstrap host.
+	// The spread key will get picked up when we add the new nodes later.
+	//
+	// Note: we don't pass in the vdb to download so that it honors the hosts we
+	// pass. But then the vdb is passed into the upload so that instruction will
+	// honor the hosts passed in.
+	nmaDownloadSpreadConfigOp := makeNMADownloadConfigOp(
+		"NMADownloadSpreadConfigOp", options.bootstrapHost, "config/spread", &spreadConfContent, nil)
+	nmaUploadSpreadConfigOp := makeNMAUploadConfigOp(vcc.Log,
+		"NMAUploadSpreadConfigOp", options.bootstrapHost, options.bootstrapHost, "config/spread", &spreadConfContent, vdb, true)
+	return []ClusterOp{
+		&nmaDownloadSpreadConfigOp,
+		&nmaUploadSpreadConfigOp,
+	}
 }
 
 // produceCreateDBWorkerNodesInstructions returns the workder nodes' instructions for create_db.

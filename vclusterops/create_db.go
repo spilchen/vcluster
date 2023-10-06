@@ -375,6 +375,15 @@ func (opt *VCreateDatabaseOptions) ValidateAnalyzeOptions() error {
 	return opt.analyzeOptions()
 }
 
+func (opt *VCreateDatabaseOptions) isVerticaSpreadEncryptionEnabled() bool {
+	const (
+		EncryptSpreadCommConfigName  = "EncryptSpreadComm"
+		EncryptSpreadCommTypeVertica = "vertica"
+	)
+	val, ok := opt.ConfigurationParameters[EncryptSpreadCommConfigName]
+	return ok && val == EncryptSpreadCommTypeVertica
+}
+
 func (vcc *VClusterCommands) VCreateDatabase(options *VCreateDatabaseOptions) (VCoordinationDatabase, error) {
 	vcc.Log.Info("starting VCreateDatabase")
 
@@ -504,13 +513,6 @@ func (vcc *VClusterCommands) produceCreateDBBootstrapInstructions(
 		return instructions, err
 	}
 
-	nmaStartNodeOp := makeNMAStartNodeOp(bootstrapHost)
-
-	httpsPollBootstrapNodeStateOp, err := makeHTTPSPollNodeStateOp(bootstrapHost, true, *options.UserName, options.Password)
-	if err != nil {
-		return instructions, err
-	}
-
 	instructions = append(instructions,
 		&nmaHealthOp,
 		&nmaVerticaVersionOp,
@@ -519,11 +521,42 @@ func (vcc *VClusterCommands) produceCreateDBBootstrapInstructions(
 		&nmaNetworkProfileOp,
 		&nmaBootstrapCatalogOp,
 		&nmaReadCatalogEditorOp,
+	)
+
+	if options.isVerticaSpreadEncryptionEnabled() || true {
+		instructions = append(instructions,
+			vcc.enableSpreadEncryption(vdb, options)...,
+		)
+	}
+
+	nmaStartNodeOp := makeNMAStartNodeOp(bootstrapHost)
+
+	httpsPollBootstrapNodeStateOp, err := makeHTTPSPollNodeStateOp(bootstrapHost, true, *options.UserName, options.Password)
+	if err != nil {
+		return instructions, err
+	}
+
+	instructions = append(instructions,
 		&nmaStartNodeOp,
 		&httpsPollBootstrapNodeStateOp,
 	)
 
 	return instructions, nil
+}
+
+func (vcc *VClusterCommands) enableSpreadEncryption(
+	vdb *VCoordinationDatabase, options *VCreateDatabaseOptions) []ClusterOp {
+	var spreadConfContent string
+	nmaDownloadSpreadConfigOp := makeNMADownloadConfigOp(
+		"NMADownloadSpreadConfigOp", options.bootstrapHost, "config/spread", &spreadConfContent, vdb)
+	spreadConfContent = fmt.Sprintf("%s\n# SPILLY see me", spreadConfContent)
+	vcc.Log.Info("Modified spread.conf", "contents", spreadConfContent)
+	nmaUploadSpreadConfigOp := makeNMAUploadConfigOp(
+		"NMAUploadSpreadConfigOp", options.bootstrapHost, options.bootstrapHost, "config/spread", &spreadConfContent, vdb)
+	return []ClusterOp{
+		&nmaDownloadSpreadConfigOp,
+		&nmaUploadSpreadConfigOp,
+	}
 }
 
 // produceCreateDBWorkerNodesInstructions returns the workder nodes' instructions for create_db.

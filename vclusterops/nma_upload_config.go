@@ -16,9 +16,12 @@
 package vclusterops
 
 import (
+	crand "crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 
 	"github.com/vertica/vcluster/vclusterops/util"
 	"github.com/vertica/vcluster/vclusterops/vlog"
@@ -80,8 +83,13 @@ func (op *NMAUploadConfigOp) setupRequestBody(hosts []string) error {
 	if op.encryptSpread {
 		op.log.Info("modifying spread.conf for encryption")
 		// SPILLY - generate this key from a library
-		spreadKeyPayload := `{"y17b": "26169b33c812e9d1db67ec1dd3046a23219aa1e32840a105322de2dd06752279"}`
-		*op.fileContent = fmt.Sprintf("%s\n# SPILLY added by me\n# VSpreadKey: %s", *op.fileContent, spreadKeyPayload)
+		// spreadKeyPayload := `{"y17b": "26169b33c812e9d1db67ec1dd3046a23219aa1e32840a105322de2dd06752279"}`
+		spreadKey, err := generateSpreadKey()
+		if err != nil {
+			return err
+		}
+		spreadKeyPayload := fmt.Sprintf(`{%q: %q}`, generateKeyID(), spreadKey)
+		*op.fileContent = fmt.Sprintf("%s\n# VSpreadKey: %s", *op.fileContent, spreadKeyPayload)
 	}
 
 	for _, host := range hosts {
@@ -203,4 +211,23 @@ func (op *NMAUploadConfigOp) processResult(_ *OpEngineExecContext) error {
 	}
 
 	return allErrs
+}
+
+func generateSpreadKey() (string, error) {
+	const spreadKeySize = 32
+	bytes := make([]byte, spreadKeySize)
+	if _, err := crand.Read(bytes); err != nil {
+		return "", fmt.Errorf("failed to generate random bytes for spread: %w", err)
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+func generateKeyID() string {
+	const keyLength = 4
+	var availChars = []byte("abcdefghijklmnopqrstuvwxyz0123456789")
+	b := make([]byte, keyLength)
+	for i := range b {
+		b[i] = availChars[rand.Intn(len(availChars))] //nolint:gosec
+	}
+	return string(b)
 }

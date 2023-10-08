@@ -549,7 +549,7 @@ func (vcc *VClusterCommands) enableSpreadEncryption(
 	vdb *VCoordinationDatabase, options *VCreateDatabaseOptions) []ClusterOp {
 	var spreadConfContent string
 	vcc.Log.Info("SPILLY sleeping for 60 seconds")
-	time.Sleep(60)
+	time.Sleep(60 * time.Second)
 	nmaDownloadSpreadConfigOp := makeNMADownloadConfigOp(
 		"NMADownloadSpreadConfigOp", options.bootstrapHost, "config/spread", &spreadConfContent, vdb)
 	// SPILLY - we aren't seen any contents in spreadConfContent

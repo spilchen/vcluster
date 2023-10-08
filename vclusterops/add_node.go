@@ -385,12 +385,10 @@ func (vcc *VClusterCommands) produceAddNodeInstructions(vdb *VCoordinationDataba
 	)
 
 	// we will remove the nil parameters in VER-88401 by adding them in execContext
-	produceTransferConfigOps(vcc.Log.Log,
-		&instructions,
+	produceTransferConfigOps(&instructions,
 		nil,
 		vdb.HostList,
-		vdb, /*db configurations retrieved from a running db*/
-		false)
+		vdb) /*db configurations retrieved from a running db*/
 
 	nmaStartNewNodesOp := makeNMAStartNodeOpWithVDB(newHosts, vdb)
 	httpsPollNodeStateOp, err := makeHTTPSPollNodeStateOp(newHosts, usePassword, username, password)

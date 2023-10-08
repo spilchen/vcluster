@@ -264,12 +264,10 @@ func (vcc *VClusterCommands) produceRestartNodesInstructions(restartNodeInfo *VR
 	// we use information from v1/nodes endpoint to get all node information to update the sourceConfHost value
 	// after we find any UP primary nodes as source host for syncing spread.conf and vertica.conf
 	// we will remove the nil parameters in VER-88401 by adding them in execContext
-	produceTransferConfigOps(vcc.Log.Log,
-		&instructions,
+	produceTransferConfigOps(&instructions,
 		nil, /*source hosts for transferring configuration files*/
 		restartNodeInfo.HostsToRestart,
-		vdb,
-		false)
+		vdb)
 
 	httpsRestartUpCommandOp, err := makeHTTPSStartUpCommandOp(options.usePassword, *options.UserName, options.Password, vdb)
 	if err != nil {

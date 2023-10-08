@@ -523,7 +523,7 @@ func (vcc *VClusterCommands) produceCreateDBBootstrapInstructions(
 		&nmaReadCatalogEditorOp,
 	)
 
-	if options.isVerticaSpreadEncryptionEnabled() {
+	if options.isVerticaSpreadEncryptionEnabled() || true { // SPILLY
 		// SPILLY - we don't want to do anyting for create db. Maybe remove the config parm?
 		instructions = append(instructions,
 			vcc.enableSpreadEncryption(vdb, options)...,
@@ -551,7 +551,7 @@ func (vcc *VClusterCommands) enableSpreadEncryption(
 	nmaDownloadSpreadConfigOp := makeNMADownloadConfigOp(
 		"NMADownloadSpreadConfigOp", options.bootstrapHost, "config/spread", &spreadConfContent, vdb)
 	nmaUploadSpreadConfigOp := makeNMAUploadConfigOp(
-		"NMAUploadSpreadConfigOp", options.bootstrapHost, options.bootstrapHost, "config/spread", &spreadConfContent, vdb)
+		"NMAUploadSpreadConfigOp", options.bootstrapHost, options.bootstrapHost, "config/spread", &spreadConfContent, vdb, true)
 	return []ClusterOp{
 		&nmaDownloadSpreadConfigOp,
 		&nmaUploadSpreadConfigOp,
@@ -604,12 +604,10 @@ func (vcc *VClusterCommands) produceCreateDBWorkerNodesInstructions(
 
 		instructions = append(instructions, &httpsGetNodesInfoOp, &httpsStartUpCommandOp)
 
-		produceTransferConfigOps(vcc.Log.Log,
-			&instructions,
+		produceTransferConfigOps(&instructions,
 			bootstrapHost,
 			vdb.HostList,
-			vdb, /*db configurations retrieved from a running db*/
-			false)
+			vdb) /*db configurations retrieved from a running db*/
 		nmaStartNewNodesOp := makeNMAStartNodeOpWithVDB(newNodeHosts, vdb)
 		instructions = append(instructions, &nmaStartNewNodesOp)
 	}

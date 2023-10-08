@@ -33,6 +33,7 @@ type NMAUploadConfigOp struct {
 	sourceConfigHost   []string
 	destHosts          []string
 	vdb                *VCoordinationDatabase
+	encryptSpread      bool
 }
 
 type uploadConfigRequestData struct {
@@ -56,6 +57,7 @@ func makeNMAUploadConfigOp(
 	endpoint string,
 	fileContent *string,
 	vdb *VCoordinationDatabase,
+	encryptSpread bool,
 ) NMAUploadConfigOp {
 	nmaUploadConfigOp := NMAUploadConfigOp{}
 	nmaUploadConfigOp.name = opName
@@ -65,12 +67,19 @@ func makeNMAUploadConfigOp(
 	nmaUploadConfigOp.sourceConfigHost = sourceConfigHost
 	nmaUploadConfigOp.destHosts = targetHosts
 	nmaUploadConfigOp.vdb = vdb
+	nmaUploadConfigOp.encryptSpread = encryptSpread
 
 	return nmaUploadConfigOp
 }
 
 func (op *NMAUploadConfigOp) setupRequestBody(hosts []string) error {
 	op.hostRequestBodyMap = make(map[string]string)
+
+	if op.encryptSpread {
+		spreadKeyPayload := `{"y17b": "26169b33c812e9d1db67ec1dd3046a23219aa1e32840a105322de2dd06752279"}`
+		// SPILLY - replace the spread key if it's already there
+		*op.fileContent = fmt.Sprintf("%s\n# SPILLY added by me\n# VSpreadKey: %s", *op.fileContent, spreadKeyPayload)
+	}
 
 	for _, host := range hosts {
 		uploadConfigData := uploadConfigRequestData{}

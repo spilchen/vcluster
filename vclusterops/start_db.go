@@ -213,12 +213,10 @@ func (vcc *VClusterCommands) produceStartDBInstructions(options *VStartDatabaseO
 	// we use information from catalog editor operation to update the sourceConfHost value
 	// after we find host with the highest catalog and hosts that need to synchronize the catalog
 	// we will remove the nil parameters in VER-88401 by adding them in execContext
-	produceTransferConfigOps(vcc.Log.Log,
-		&instructions,
+	produceTransferConfigOps(&instructions,
 		nil, /*source hosts for transferring configuration files*/
 		options.Hosts,
-		nil,  /*db configurations retrieved from a running db*/
-		true) // SPILLY - make this a parm
+		nil) /*db configurations retrieved from a running db*/
 
 	nmaStartNewNodesOp := makeNMAStartNodeOp(options.Hosts)
 	httpsPollNodeStateOp, err := makeHTTPSPollNodeStateOpWithTimeoutAndCommand(options.Hosts,

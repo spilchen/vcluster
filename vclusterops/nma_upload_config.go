@@ -49,6 +49,7 @@ type uploadConfigRequestData struct {
 // To add nodes to the DB, use the bootstrapHost value for sourceConfigHost, a list of newly added nodes
 // for newNodeHosts and provide a nil value for hosts.
 func makeNMAUploadConfigOp(
+	log vlog.Printer,
 	opName string,
 	sourceConfigHost []string, // source host for transferring configuration files, specifically, it is
 	// 1. the bootstrap host when creating the database
@@ -60,6 +61,7 @@ func makeNMAUploadConfigOp(
 	encryptSpread bool,
 ) NMAUploadConfigOp {
 	nmaUploadConfigOp := NMAUploadConfigOp{}
+	nmaUploadConfigOp.log = log
 	nmaUploadConfigOp.name = opName
 	nmaUploadConfigOp.endpoint = endpoint
 	nmaUploadConfigOp.fileContent = fileContent
@@ -79,6 +81,7 @@ func (op *NMAUploadConfigOp) setupRequestBody(hosts []string) error {
 		spreadKeyPayload := `{"y17b": "26169b33c812e9d1db67ec1dd3046a23219aa1e32840a105322de2dd06752279"}`
 		// SPILLY - replace the spread key if it's already there
 		*op.fileContent = fmt.Sprintf("%s\n# SPILLY added by me\n# VSpreadKey: %s", *op.fileContent, spreadKeyPayload)
+		op.log.Info("modified spread conf", "contents", *op.fileContent)
 	}
 
 	for _, host := range hosts {

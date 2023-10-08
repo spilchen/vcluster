@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/vertica/vcluster/vclusterops/util"
 	"github.com/vertica/vcluster/vclusterops/vlog"
 )
@@ -384,8 +385,9 @@ func (opt *VCreateDatabaseOptions) isVerticaSpreadEncryptionEnabled() bool {
 	return ok && val == EncryptSpreadCommTypeVertica
 }
 
-func (vcc *VClusterCommands) VCreateDatabase(options *VCreateDatabaseOptions) (VCoordinationDatabase, error) {
+func (vcc *VClusterCommands) VCreateDatabase(options *VCreateDatabaseOptions, log logr.Logger) (VCoordinationDatabase, error) {
 	vcc.Log.Info("starting VCreateDatabase")
+	log.Info("SPILLY very temp - force a complie failure")
 
 	/*
 	 *   - Produce Instructions

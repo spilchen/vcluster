@@ -188,7 +188,7 @@ func (c *CmdCreateDB) Run(log vlog.Printer) error {
 		Log: log.WithName(c.CommandType()),
 	}
 	vcc.Log.V(1).Info("Called method Run()")
-	vdb, createError := vcc.VCreateDatabase(c.createDBOptions)
+	vdb, createError := vcc.VCreateDatabase(c.createDBOptions, log.Log)
 	if createError != nil {
 		return createError
 	}

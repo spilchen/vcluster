@@ -28,7 +28,6 @@ type VStartDatabaseOptions struct {
 	DatabaseOptions
 	// Timeout for polling the states of all nodes in the database in HTTPSPollNodeStateOp
 	StatePollingTimeout int
-	EncryptSpreadComm   string
 }
 
 func VStartDatabaseOptionsFactory() VStartDatabaseOptions {
@@ -216,7 +215,7 @@ func (vcc *VClusterCommands) produceStartDBInstructions(options *VStartDatabaseO
 	produceTransferConfigOps(&instructions,
 		nil, /*source hosts for transferring configuration files*/
 		options.Hosts,
-		nil) /*db configurations retrieved from a running db*/
+		nil /*db configurations retrieved from a running db*/)
 
 	nmaStartNewNodesOp := makeNMAStartNodeOp(options.Hosts)
 	httpsPollNodeStateOp, err := makeHTTPSPollNodeStateOpWithTimeoutAndCommand(options.Hosts,

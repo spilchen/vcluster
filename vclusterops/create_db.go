@@ -523,8 +523,7 @@ func (vcc *VClusterCommands) produceCreateDBBootstrapInstructions(
 		&nmaReadCatalogEditorOp,
 	)
 
-	if options.isVerticaSpreadEncryptionEnabled() || true { // SPILLY
-		// SPILLY - we don't want to do anyting for create db. Maybe remove the config parm?
+	if options.isVerticaSpreadEncryptionEnabled() {
 		instructions = append(instructions,
 			vcc.enableSpreadEncryption(vdb, options)...,
 		)
@@ -548,7 +547,14 @@ func (vcc *VClusterCommands) produceCreateDBBootstrapInstructions(
 func (vcc *VClusterCommands) enableSpreadEncryption(
 	vdb *VCoordinationDatabase, options *VCreateDatabaseOptions) []ClusterOp {
 	var spreadConfContent string
-	// SPILLY - don't pass in the vdb so that it honours the hosts we pass. Oh man!
+	// This is quite the hack to make spread encryption work without using the
+	// new NMA endpoint. This library will make the edit to spread.conf directly
+	// then send out the update. We only need to do this at the bootstrap host.
+	// The spread key will get picked up when we add the new nodes later.
+	//
+	// Note: we don't pass in the vdb to download so that it honors the hosts we
+	// pass. But then the vdb is passed into the upload so that instruction will
+	// honor the hosts passed in.
 	nmaDownloadSpreadConfigOp := makeNMADownloadConfigOp(
 		"NMADownloadSpreadConfigOp", options.bootstrapHost, "config/spread", &spreadConfContent, nil)
 	nmaUploadSpreadConfigOp := makeNMAUploadConfigOp(vcc.Log,
@@ -608,7 +614,7 @@ func (vcc *VClusterCommands) produceCreateDBWorkerNodesInstructions(
 		produceTransferConfigOps(&instructions,
 			bootstrapHost,
 			vdb.HostList,
-			vdb) /*db configurations retrieved from a running db*/
+			vdb /*db configurations retrieved from a running db*/)
 		nmaStartNewNodesOp := makeNMAStartNodeOpWithVDB(newNodeHosts, vdb)
 		instructions = append(instructions, &nmaStartNewNodesOp)
 	}

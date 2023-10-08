@@ -77,6 +77,7 @@ func makeNMAUploadConfigOp(
 func (op *NMAUploadConfigOp) setupRequestBody(hosts []string) error {
 	op.hostRequestBodyMap = make(map[string]string)
 
+	op.log.Info("SPILLY setting up upload request body", "encryptSpread", op.encryptSpread)
 	if op.encryptSpread {
 		spreadKeyPayload := `{"y17b": "26169b33c812e9d1db67ec1dd3046a23219aa1e32840a105322de2dd06752279"}`
 		// SPILLY - replace the spread key if it's already there

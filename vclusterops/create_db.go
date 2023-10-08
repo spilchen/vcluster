@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/vertica/vcluster/vclusterops/util"
 	"github.com/vertica/vcluster/vclusterops/vlog"
@@ -523,7 +524,7 @@ func (vcc *VClusterCommands) produceCreateDBBootstrapInstructions(
 		&nmaReadCatalogEditorOp,
 	)
 
-	if options.isVerticaSpreadEncryptionEnabled() || true {
+	if options.isVerticaSpreadEncryptionEnabled() || true { // SPILLY make this specific to spread encryption only
 		instructions = append(instructions,
 			vcc.enableSpreadEncryption(vdb, options)...,
 		)
@@ -547,8 +548,11 @@ func (vcc *VClusterCommands) produceCreateDBBootstrapInstructions(
 func (vcc *VClusterCommands) enableSpreadEncryption(
 	vdb *VCoordinationDatabase, options *VCreateDatabaseOptions) []ClusterOp {
 	var spreadConfContent string
+	vcc.Log.Info("SPILLY sleeping for 60 seconds")
+	time.Sleep(60)
 	nmaDownloadSpreadConfigOp := makeNMADownloadConfigOp(
 		"NMADownloadSpreadConfigOp", options.bootstrapHost, "config/spread", &spreadConfContent, vdb)
+	// SPILLY - we aren't seen any contents in spreadConfContent
 	spreadConfContent = fmt.Sprintf("%s\n# SPILLY see me", spreadConfContent)
 	vcc.Log.Info("Modified spread.conf", "contents", spreadConfContent)
 	nmaUploadSpreadConfigOp := makeNMAUploadConfigOp(

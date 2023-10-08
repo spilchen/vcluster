@@ -21,6 +21,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/vertica/vcluster/vclusterops/util"
 	"github.com/vertica/vcluster/vclusterops/vlog"
 )
@@ -35,7 +36,7 @@ const (
 
 // produceTransferConfigOps generates instructions to transfert some config
 // files from a sourceConfig node to target nodes.
-func produceTransferConfigOps(instructions *[]ClusterOp, sourceConfigHost, targetHosts []string, vdb *VCoordinationDatabase) {
+func produceTransferConfigOps(log logr.Logger, instructions *[]ClusterOp, sourceConfigHost, targetHosts []string, vdb *VCoordinationDatabase, encryptSpread bool) {
 	var verticaConfContent string
 	nmaDownloadVerticaConfigOp := makeNMADownloadConfigOp(
 		"NMADownloadVerticaConfigOp", sourceConfigHost, "config/vertica", &verticaConfContent, vdb)
@@ -44,6 +45,14 @@ func produceTransferConfigOps(instructions *[]ClusterOp, sourceConfigHost, targe
 	var spreadConfContent string
 	nmaDownloadSpreadConfigOp := makeNMADownloadConfigOp(
 		"NMADownloadSpreadConfigOp", sourceConfigHost, "config/spread", &spreadConfContent, vdb)
+
+	if encryptSpread {
+		spreadKeyPayload := `{"y17b": "26169b33c812e9d1db67ec1dd3046a23219aa1e32840a105322de2dd06752279"}`
+		// SPILLY - replace the spread key if it's already there
+		spreadConfContent = fmt.Sprintf("%s\n# SPILLY added by me\n# VSpreadKey: %s", spreadConfContent, spreadKeyPayload)
+		log.Info("Modified spread.conf", "contents", spreadConfContent)
+	}
+
 	nmaUploadSpreadConfigOp := makeNMAUploadConfigOp(
 		"NMAUploadSpreadConfigOp", sourceConfigHost, targetHosts, "config/spread", &spreadConfContent, vdb)
 	*instructions = append(*instructions,

@@ -28,6 +28,7 @@ type VStartDatabaseOptions struct {
 	DatabaseOptions
 	// Timeout for polling the states of all nodes in the database in HTTPSPollNodeStateOp
 	StatePollingTimeout int
+	EncryptSpreadComm   string
 }
 
 func VStartDatabaseOptionsFactory() VStartDatabaseOptions {
@@ -212,10 +213,12 @@ func (vcc *VClusterCommands) produceStartDBInstructions(options *VStartDatabaseO
 	// we use information from catalog editor operation to update the sourceConfHost value
 	// after we find host with the highest catalog and hosts that need to synchronize the catalog
 	// we will remove the nil parameters in VER-88401 by adding them in execContext
-	produceTransferConfigOps(&instructions,
+	produceTransferConfigOps(vcc.Log.Log,
+		&instructions,
 		nil, /*source hosts for transferring configuration files*/
 		options.Hosts,
-		nil /*db configurations retrieved from a running db*/)
+		nil,  /*db configurations retrieved from a running db*/
+		true) // SPILLY - make this a parm
 
 	nmaStartNewNodesOp := makeNMAStartNodeOp(options.Hosts)
 	httpsPollNodeStateOp, err := makeHTTPSPollNodeStateOpWithTimeoutAndCommand(options.Hosts,

@@ -548,8 +548,9 @@ func (vcc *VClusterCommands) produceCreateDBBootstrapInstructions(
 func (vcc *VClusterCommands) enableSpreadEncryption(
 	vdb *VCoordinationDatabase, options *VCreateDatabaseOptions) []ClusterOp {
 	var spreadConfContent string
+	// SPILLY - don't pass in the vdb so that it honours the hosts we pass. Oh man!
 	nmaDownloadSpreadConfigOp := makeNMADownloadConfigOp(
-		"NMADownloadSpreadConfigOp", options.bootstrapHost, "config/spread", &spreadConfContent, vdb)
+		"NMADownloadSpreadConfigOp", options.bootstrapHost, "config/spread", &spreadConfContent, nil)
 	nmaUploadSpreadConfigOp := makeNMAUploadConfigOp(vcc.Log,
 		"NMAUploadSpreadConfigOp", options.bootstrapHost, options.bootstrapHost, "config/spread", &spreadConfContent, vdb, true)
 	return []ClusterOp{

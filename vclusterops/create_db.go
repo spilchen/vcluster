@@ -377,11 +377,17 @@ func (opt *VCreateDatabaseOptions) ValidateAnalyzeOptions() error {
 
 func (opt *VCreateDatabaseOptions) isVerticaSpreadEncryptionEnabled() bool {
 	const (
-		EncryptSpreadCommConfigName  = "EncryptSpreadComm"
+		EncryptSpreadCommConfigName  = "encryptspreadcomm"
 		EncryptSpreadCommTypeVertica = "vertica"
 	)
-	val, ok := opt.ConfigurationParameters[EncryptSpreadCommConfigName]
-	return ok && val == EncryptSpreadCommTypeVertica
+	// We cannot use the map lookup because the key name is case insensitive.
+	// SPILLY - in actual change we should change the map to allow for key lookups
+	for key, val := range opt.ConfigurationParameters {
+		if strings.EqualFold(key, EncryptSpreadCommConfigName) {
+			return val == EncryptSpreadCommTypeVertica
+		}
+	}
+	return false
 }
 
 func (vcc *VClusterCommands) VCreateDatabase(options *VCreateDatabaseOptions) (VCoordinationDatabase, error) {
@@ -528,10 +534,7 @@ func (vcc *VClusterCommands) produceCreateDBBootstrapInstructions(
 			vcc.enableSpreadEncryption(vdb, options)...,
 		)
 	} else {
-		// SPILLY - remove this message as it leaks credentials
-		vcc.Log.Info("spread encryption is not enabled",
-			"encryptSpreadComm", options.ConfigurationParameters["encryptSpreadComm"],
-			"ConfigurationParameters", options.ConfigurationParameters)
+		vcc.Log.Info("spread encryption is not enabled")
 	}
 
 	nmaStartNodeOp := makeNMAStartNodeOp(bootstrapHost)

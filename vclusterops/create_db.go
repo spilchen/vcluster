@@ -527,6 +527,9 @@ func (vcc *VClusterCommands) produceCreateDBBootstrapInstructions(
 		instructions = append(instructions,
 			vcc.enableSpreadEncryption(vdb, options)...,
 		)
+	} else {
+		vcc.Log.Info("spread encryption is not enabled",
+			"encryptSpreadComm", options.ConfigurationParameters["encryptSpreadComm"])
 	}
 
 	nmaStartNodeOp := makeNMAStartNodeOp(bootstrapHost)

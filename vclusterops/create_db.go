@@ -546,6 +546,7 @@ func (vcc *VClusterCommands) produceCreateDBBootstrapInstructions(
 
 func (vcc *VClusterCommands) enableSpreadEncryption(
 	vdb *VCoordinationDatabase, options *VCreateDatabaseOptions) []ClusterOp {
+	vcc.Log.Info("adding instructions to enabled spread encryption")
 	var spreadConfContent string
 	// This is quite the hack to make spread encryption work without using the
 	// new NMA endpoint. This library will make the edit to spread.conf directly

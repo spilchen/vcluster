@@ -528,8 +528,10 @@ func (vcc *VClusterCommands) produceCreateDBBootstrapInstructions(
 			vcc.enableSpreadEncryption(vdb, options)...,
 		)
 	} else {
+		// SPILLY - remove this message as it leaks credentials
 		vcc.Log.Info("spread encryption is not enabled",
-			"encryptSpreadComm", options.ConfigurationParameters["encryptSpreadComm"])
+			"encryptSpreadComm", options.ConfigurationParameters["encryptSpreadComm"],
+			"ConfigurationParameters", options.ConfigurationParameters)
 	}
 
 	nmaStartNodeOp := makeNMAStartNodeOp(bootstrapHost)

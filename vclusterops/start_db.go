@@ -184,7 +184,7 @@ func (vcc *VClusterCommands) produceStartDBInstructions(options *VStartDatabaseO
 			"NMADownloadSpreadConfigOp", nil, "config/spread", &spreadConfContent, nil)
 		nmaUploadSpreadConfigOp := makeNMAUploadConfigOp(vcc.Log,
 			"NMAUploadSpreadConfigOp", nil, nil, "config/spread", &spreadConfContent,
-			&vdb, true, true)
+			nil, true, true)
 		instructions = append(instructions,
 			&nmaDownloadSpreadConfigOp,
 			&nmaUploadSpreadConfigOp)

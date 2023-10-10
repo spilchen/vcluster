@@ -146,6 +146,7 @@ func (op *NMAUploadConfigOp) prepare(execContext *OpEngineExecContext) error {
 				return fmt.Errorf("could not find at least one host with the latest catalog")
 			}
 			if op.sendToHighestCatalogOnly {
+				op.log.Info("setting hosts to be the highest catalog", "hosts", hostsWithLatestCatalog)
 				op.hosts = hostsWithLatestCatalog
 			} else {
 				hostsNeedCatalogSync := util.SliceDiff(op.destHosts, hostsWithLatestCatalog)

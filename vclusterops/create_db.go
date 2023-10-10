@@ -575,7 +575,7 @@ func (vcc *VClusterCommands) enableSpreadEncryption(
 	nmaDownloadSpreadConfigOp := makeNMADownloadConfigOp(
 		"NMADownloadSpreadConfigOp", options.bootstrapHost, "config/spread", &spreadConfContent, nil)
 	nmaUploadSpreadConfigOp := makeNMAUploadConfigOp(vcc.Log,
-		"NMAUploadSpreadConfigOp", options.bootstrapHost, options.bootstrapHost, "config/spread", &spreadConfContent, vdb, true)
+		"NMAUploadSpreadConfigOp", options.bootstrapHost, options.bootstrapHost, "config/spread", &spreadConfContent, vdb, true, false)
 	return []ClusterOp{
 		&nmaDownloadSpreadConfigOp,
 		&nmaUploadSpreadConfigOp,

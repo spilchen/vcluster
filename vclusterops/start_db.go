@@ -26,7 +26,8 @@ type VStartDatabaseOptions struct {
 	// basic db info
 	DatabaseOptions
 	// Timeout for polling the states of all nodes in the database in HTTPSPollNodeStateOp
-	StatePollingTimeout int
+	StatePollingTimeout    int
+	AddSpreadEncryptionKey bool
 }
 
 func VStartDatabaseOptionsFactory() VStartDatabaseOptions {
@@ -176,6 +177,18 @@ func (vcc *VClusterCommands) produceStartDBInstructions(options *VStartDatabaseO
 		&nmaGetNodesInfoOp,
 		&nmaReadCatalogEditorOp,
 	)
+
+	if options.AddSpreadEncryptionKey {
+		var spreadConfContent string
+		nmaDownloadSpreadConfigOp := makeNMADownloadConfigOp(
+			"NMADownloadSpreadConfigOp", nil, "config/spread", &spreadConfContent, nil)
+		nmaUploadSpreadConfigOp := makeNMAUploadConfigOp(vcc.Log,
+			"NMAUploadSpreadConfigOp", nil, nil, "config/spread", &spreadConfContent,
+			&vdb, true, true)
+		instructions = append(instructions,
+			&nmaDownloadSpreadConfigOp,
+			&nmaUploadSpreadConfigOp)
+	}
 
 	// sourceConfHost is set to nil value in upload and download step
 	// we use information from catalog editor operation to update the sourceConfHost value

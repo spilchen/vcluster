@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"regexp"
 
 	"github.com/vertica/vcluster/vclusterops/util"
 	"github.com/vertica/vcluster/vclusterops/vlog"
@@ -29,14 +30,15 @@ import (
 
 type NMAUploadConfigOp struct {
 	OpBase
-	catalogPathMap     map[string]string
-	endpoint           string
-	fileContent        *string
-	hostRequestBodyMap map[string]string
-	sourceConfigHost   []string
-	destHosts          []string
-	vdb                *VCoordinationDatabase
-	encryptSpread      bool
+	catalogPathMap           map[string]string
+	endpoint                 string
+	fileContent              *string
+	hostRequestBodyMap       map[string]string
+	sourceConfigHost         []string
+	destHosts                []string
+	vdb                      *VCoordinationDatabase
+	encryptSpread            bool
+	sendToHighestCatalogOnly bool
 }
 
 type uploadConfigRequestData struct {
@@ -62,6 +64,7 @@ func makeNMAUploadConfigOp(
 	fileContent *string,
 	vdb *VCoordinationDatabase,
 	encryptSpread bool,
+	sendToHighestCatalogOnly bool,
 ) NMAUploadConfigOp {
 	nmaUploadConfigOp := NMAUploadConfigOp{}
 	nmaUploadConfigOp.log = log
@@ -73,6 +76,7 @@ func makeNMAUploadConfigOp(
 	nmaUploadConfigOp.destHosts = targetHosts
 	nmaUploadConfigOp.vdb = vdb
 	nmaUploadConfigOp.encryptSpread = encryptSpread
+	nmaUploadConfigOp.sendToHighestCatalogOnly = sendToHighestCatalogOnly
 
 	return nmaUploadConfigOp
 }
@@ -87,7 +91,13 @@ func (op *NMAUploadConfigOp) setupRequestBody(hosts []string) error {
 			return err
 		}
 		spreadKeyPayload := fmt.Sprintf(`{%q: %q}`, generateKeyID(), spreadKey)
-		*op.fileContent = fmt.Sprintf("%s\n# VSpreadKey: %s", *op.fileContent, spreadKeyPayload)
+		if hasSpreadKey(*op.fileContent) {
+			op.log.Info("replace existing spread key")
+			*op.fileContent = replaceSpreadPayload(*op.fileContent, spreadKeyPayload)
+		} else {
+			op.log.Info("adding first spread key")
+			*op.fileContent = fmt.Sprintf("%s\n# VSpreadKey: %s", *op.fileContent, spreadKeyPayload)
+		}
 	}
 
 	for _, host := range hosts {
@@ -135,9 +145,13 @@ func (op *NMAUploadConfigOp) prepare(execContext *OpEngineExecContext) error {
 			if len(hostsWithLatestCatalog) == 0 {
 				return fmt.Errorf("could not find at least one host with the latest catalog")
 			}
-			hostsNeedCatalogSync := util.SliceDiff(op.destHosts, hostsWithLatestCatalog)
-			// Update the hosts that need to synchronize the catalog
-			op.hosts = hostsNeedCatalogSync
+			if op.sendToHighestCatalogOnly {
+				op.hosts = hostsWithLatestCatalog
+			} else {
+				hostsNeedCatalogSync := util.SliceDiff(op.destHosts, hostsWithLatestCatalog)
+				// Update the hosts that need to synchronize the catalog
+				op.hosts = hostsNeedCatalogSync
+			}
 			// If no hosts to upload, skip this operation. This can happen if all
 			// hosts have the latest catalog.
 			if len(op.hosts) == 0 {
@@ -228,4 +242,16 @@ func generateKeyID() string {
 		b[i] = availChars[rand.Intn(len(availChars))] //nolint:gosec
 	}
 	return string(b)
+}
+
+const spreadKeyRegexp = `(# VSpreadKey:\s+)({"[a-z0-9]+": "[a-z0-9]+"})`
+
+func hasSpreadKey(spreadConf string) bool {
+	r := regexp.MustCompile(spreadKeyRegexp)
+	return r.FindString(spreadConf) != ""
+}
+
+func replaceSpreadPayload(spreadConf, payload string) string {
+	r := regexp.MustCompile(`(# VSpreadKey:\s+)({"[a-z0-9]+": "[a-z0-9]+"})`)
+	return r.ReplaceAllString(spreadConf, fmt.Sprintf("${1}%s", payload))
 }

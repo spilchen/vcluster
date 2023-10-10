@@ -148,6 +148,13 @@ func (op *NMAUploadConfigOp) prepare(execContext *OpEngineExecContext) error {
 			if op.sendToHighestCatalogOnly {
 				op.log.Info("setting hosts to be the highest catalog", "hosts", hostsWithLatestCatalog)
 				op.hosts = hostsWithLatestCatalog
+				// Update the catalogPathMap for next upload operation's steps from information of catalog editor
+				nmaVDB := execContext.nmaVDatabase
+				err := updateCatalogPathMapFromCatalogEditor(op.hosts, &nmaVDB, op.catalogPathMap)
+				if err != nil {
+					return fmt.Errorf("failed to get catalog paths from catalog editor: %w", err)
+				}
+				op.log.Info("catalog path map updated", "catalogPathMap", op.catalogPathMap)
 			} else {
 				hostsNeedCatalogSync := util.SliceDiff(op.destHosts, hostsWithLatestCatalog)
 				// Update the hosts that need to synchronize the catalog
@@ -168,6 +175,7 @@ func (op *NMAUploadConfigOp) prepare(execContext *OpEngineExecContext) error {
 			if err != nil {
 				return fmt.Errorf("failed to get catalog paths from catalog editor: %w", err)
 			}
+			op.log.Info("catalog path map updated", "catalogPathMap", op.catalogPathMap)
 		}
 	} else {
 		// use started nodes input provided by the user

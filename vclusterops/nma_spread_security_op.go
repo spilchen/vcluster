@@ -182,7 +182,10 @@ func (op *nmaSpreadSecurityOp) generateSecurityDetails() (string, error) {
 		// (aws-kms). But we haven't yet added support for that here.
 		return "", fmt.Errorf("unsupported spread key type %s", op.keyType)
 	}
-	return fmt.Sprintf(`{%s: %s}`, keyID, spreadKey), nil
+	// SPILLY - stop hard coding key
+	l := fmt.Sprintf(`{%s: %s}`, keyID, spreadKey)
+	op.log.Info("previously generate spread key", "key", l)
+	return `{pdlk: 08b2947a9a2367d9d42f48706f14345e75eed5d65ebbf5f71c894e573d96c218}`, nil
 }
 
 func (op *nmaSpreadSecurityOp) generateVerticaSpreadKey() (string, error) {

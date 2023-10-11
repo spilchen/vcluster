@@ -86,7 +86,7 @@ func (c *CmdReviveDB) validateParse() error {
 		return err
 	}
 	if communalStorageParams != nil {
-		c.reviveDBOptions.CommunalStorageParameters = communalStorageParams
+		c.reviveDBOptions.ConfigurationParameters = communalStorageParams
 	}
 
 	// when --display-only is provided, we do not need to parse some base options like hostListStr

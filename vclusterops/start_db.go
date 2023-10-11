@@ -208,8 +208,7 @@ func (vcc *VClusterCommands) produceStartDBInstructions(options *VStartDatabaseO
 	}
 	instructions = append(instructions, &nmaReadCatalogEditorOp)
 
-	// SPILLY - we only set the communal storage parms for revive
-	if enabled, keyType := options.isSpreadEncryptionEnabled(options.CommunalStorageParameters); enabled {
+	if enabled, keyType := options.isSpreadEncryptionEnabled(); enabled {
 		instructions = append(instructions,
 			vcc.setOrRotateEncryptionKey(keyType),
 		)

@@ -33,9 +33,9 @@ import (
  */
 
 type CmdCreateDB struct {
-	createDBOptions       *vclusterops.VCreateDatabaseOptions
-	configParamListStr    *string // raw input from user, need further processing
-	communalStorageParams *string // raw input from user, need further processing
+	createDBOptions     *vclusterops.VCreateDatabaseOptions
+	configParamListStr  *string // raw input from user, need further processing
+	configurationParams *string // raw input from user, need further processing
 
 	CmdBase
 }
@@ -69,8 +69,8 @@ func makeCmdCreateDB() *CmdCreateDB {
 	createDBOptions.CommunalStorageLocation = newCmd.parser.String("communal-storage-location", "",
 		util.GetEonFlagMsg("Location of communal storage"))
 	createDBOptions.ShardCount = newCmd.parser.Int("shard-count", 0, util.GetEonFlagMsg("Number of shards in the database"))
-	newCmd.communalStorageParams = newCmd.parser.String("communal-storage-params", "", util.GetOptionalFlagMsg(
-		"Comma-separated list of NAME=VALUE pairs for communal storage parameters"))
+	newCmd.configurationParams = newCmd.parser.String("configuration-params", "", util.GetOptionalFlagMsg(
+		"Comma-separated list of NAME=VALUE pairs for configuration parameters"))
 	createDBOptions.DepotPrefix = newCmd.parser.String("depot-path", "", util.GetEonFlagMsg("Path to depot directory"))
 	createDBOptions.DepotSize = newCmd.parser.String("depot-size", "", util.GetEonFlagMsg("Size of depot"))
 	createDBOptions.GetAwsCredentialsFromEnv = newCmd.parser.Bool("get-aws-credentials-from-env-vars", false,
@@ -149,13 +149,13 @@ func (c *CmdCreateDB) Parse(inputArgv []string) error {
 func (c *CmdCreateDB) validateParse() error {
 	vlog.LogInfoln("Called validateParse()")
 
-	// check the format of communal storage params string, and parse it into configParams
-	communalStorageParams, err := util.ParseConfigParams(*c.communalStorageParams)
+	// check the format of configuration params string, and parse it into configParams
+	configurationParams, err := util.ParseConfigParams(*c.configurationParams)
 	if err != nil {
 		return err
 	}
-	if communalStorageParams != nil {
-		c.createDBOptions.CommunalStorageParameters = communalStorageParams
+	if configurationParams != nil {
+		c.createDBOptions.ConfigurationParameters = configurationParams
 	}
 
 	// parse raw host str input into a []string of createDBOptions

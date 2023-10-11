@@ -139,16 +139,13 @@ func (op *nmaSpreadSecurityOp) processResult(_ *OpEngineExecContext) error {
 	var allErrs error
 	for host, result := range op.clusterHTTPRequest.ResultCollection {
 		op.logResponse(host, result)
-		if result.isPassing() {
-			_, err := op.parseAndCheckMapResponse(host, result.content)
-			if err != nil {
-				return errors.Join(allErrs, fmt.Errorf("failed to parse response %s: %w", result.content, err))
-			}
-		} else {
+		// For a passing result, the response that comes back isn't JSON. So,
+		// don't parse and validate it. Just check the status code. The non-JSON
+		// response we get is: 'Written to spread.conf'
+		if !result.isPassing() {
 			allErrs = errors.Join(allErrs, result.err)
 		}
 	}
-	op.log.Info("SPILLY finished processing nmaSpreadSecurityOp", "allErrs", allErrs)
 	return allErrs
 }
 

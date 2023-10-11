@@ -79,12 +79,15 @@ func (op *nmaSpreadSecurityOp) setupRequestBody() (map[string]string, error) {
 			CatalogPath:           getCatalogPath(fullCatalogPath),
 			SpreadSecurityDetails: securityDetails,
 		}
-		op.log.Info("payload setup", "catalogPath", payload.CatalogPath)
+		// SPILLY - remove the security details
+		op.log.Info("payload setup", "catalogPath", payload.CatalogPath, "securityDetails", securityDetails)
 
 		dataBytes, err := json.Marshal(payload)
 		if err != nil {
 			return nil, fmt.Errorf("[%s] fail to marshal payload data into JSON string, detail %w", op.name, err)
 		}
+		// SPILLY - remove this log
+		op.log.Info("mashaled payload", "dataBytes", dataBytes)
 
 		hostRequestBodyMap[host] = string(dataBytes)
 	}

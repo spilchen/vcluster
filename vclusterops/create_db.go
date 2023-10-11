@@ -504,13 +504,6 @@ func (vcc *VClusterCommands) produceCreateDBBootstrapInstructions(
 		return instructions, err
 	}
 
-	nmaStartNodeOp := makeNMAStartNodeOp(bootstrapHost)
-
-	httpsPollBootstrapNodeStateOp, err := makeHTTPSPollNodeStateOp(bootstrapHost, true, *options.UserName, options.Password)
-	if err != nil {
-		return instructions, err
-	}
-
 	instructions = append(instructions,
 		&nmaHealthOp,
 		&nmaVerticaVersionOp,
@@ -519,6 +512,22 @@ func (vcc *VClusterCommands) produceCreateDBBootstrapInstructions(
 		&nmaNetworkProfileOp,
 		&nmaBootstrapCatalogOp,
 		&nmaReadCatalogEditorOp,
+	)
+
+	if enabled, keyType := options.isSpreadEncryptionEnabled(options.ConfigurationParameters); enabled {
+		instructions = append(instructions,
+			vcc.addEnableSpreadEncryptionOp(keyType),
+		)
+	}
+
+	nmaStartNodeOp := makeNMAStartNodeOp(bootstrapHost)
+
+	httpsPollBootstrapNodeStateOp, err := makeHTTPSPollNodeStateOp(bootstrapHost, true, *options.UserName, options.Password)
+	if err != nil {
+		return instructions, err
+	}
+
+	instructions = append(instructions,
 		&nmaStartNodeOp,
 		&httpsPollBootstrapNodeStateOp,
 	)
@@ -633,4 +642,10 @@ func (vcc *VClusterCommands) produceAdditionalCreateDBInstructions(vdb *VCoordin
 		instructions = append(instructions, &httpsSyncCatalogOp)
 	}
 	return instructions, nil
+}
+
+func (vcc *VClusterCommands) addEnableSpreadEncryptionOp(keyType string) ClusterOp {
+	vcc.Log.Info("adding instruction to set key for spread encryption")
+	op := makeNMASpreadSecurityOp(vcc.Log, keyType)
+	return &op
 }

@@ -486,3 +486,14 @@ func (opt *DatabaseOptions) getDescriptionFilePath() string {
 
 	return descriptionFilePath
 }
+
+func (opt *DatabaseOptions) isSpreadEncryptionEnabled(parms map[string]string) (enabled bool, encryptionType string) {
+	const EncryptSpreadCommConfigName = "encryptspreadcomm"
+	// We cannot use the map lookup because the key name is case insensitive.
+	for key, val := range parms {
+		if strings.EqualFold(key, EncryptSpreadCommConfigName) {
+			return true, val
+		}
+	}
+	return false, ""
+}

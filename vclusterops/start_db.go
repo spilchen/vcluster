@@ -208,6 +208,13 @@ func (vcc *VClusterCommands) produceStartDBInstructions(options *VStartDatabaseO
 	}
 	instructions = append(instructions, &nmaReadCatalogEditorOp)
 
+	// SPILLY - we only set the communal storage parms for revive
+	if enabled, keyType := options.isSpreadEncryptionEnabled(options.CommunalStorageParameters); enabled {
+		instructions = append(instructions,
+			vcc.setOrRotateEncryptionKey(keyType),
+		)
+	}
+
 	// sourceConfHost is set to nil value in upload and download step
 	// we use information from catalog editor operation to update the sourceConfHost value
 	// after we find host with the highest catalog and hosts that need to synchronize the catalog
@@ -238,4 +245,10 @@ func (vcc *VClusterCommands) produceStartDBInstructions(options *VStartDatabaseO
 	}
 
 	return instructions, nil
+}
+
+func (vcc *VClusterCommands) setOrRotateEncryptionKey(keyType string) ClusterOp {
+	vcc.Log.Info("adding instruction to set or rotate the key for spread encryption")
+	op := makeNMASpreadSecurityOp(vcc.Log, keyType)
+	return &op
 }

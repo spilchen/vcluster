@@ -208,10 +208,10 @@ func (vcc *VClusterCommands) produceStartDBInstructions(options *VStartDatabaseO
 	}
 	instructions = append(instructions, &nmaReadCatalogEditorOp)
 
-	if enabled, keyType := options.isSpreadEncryptionEnabled(); enabled {
-		instructions = append(instructions,
-			vcc.setOrRotateEncryptionKey(keyType),
-		)
+	if enabled, _ := options.isSpreadEncryptionEnabled(); enabled {
+		//		instructions = append(instructions,
+		//			vcc.setOrRotateEncryptionKey(keyType),
+		//		)
 	}
 
 	// sourceConfHost is set to nil value in upload and download step

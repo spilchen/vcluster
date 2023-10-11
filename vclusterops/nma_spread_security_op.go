@@ -148,6 +148,7 @@ func (op *nmaSpreadSecurityOp) processResult(_ *OpEngineExecContext) error {
 			allErrs = errors.Join(allErrs, result.err)
 		}
 	}
+	op.log.Info("SPILLY finished processing nmaSpreadSecurityOp", "allErrs", allErrs)
 	return allErrs
 }
 

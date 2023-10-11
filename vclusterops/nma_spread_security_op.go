@@ -79,15 +79,11 @@ func (op *nmaSpreadSecurityOp) setupRequestBody() (map[string]string, error) {
 			CatalogPath:           getCatalogPath(fullCatalogPath),
 			SpreadSecurityDetails: securityDetails,
 		}
-		// SPILLY - remove the security details
-		op.log.Info("payload setup", "catalogPath", payload.CatalogPath, "securityDetails", securityDetails)
 
 		dataBytes, err := json.Marshal(payload)
 		if err != nil {
 			return nil, fmt.Errorf("[%s] fail to marshal payload data into JSON string, detail %w", op.name, err)
 		}
-		// SPILLY - remove this log
-		op.log.Info("mashaled payload", "payload", string(dataBytes))
 
 		hostRequestBodyMap[host] = string(dataBytes)
 	}
@@ -180,6 +176,9 @@ func (op *nmaSpreadSecurityOp) generateSecurityDetails() (string, error) {
 		// (aws-kms). But we haven't yet added support for that here.
 		return "", fmt.Errorf("unsupported spread key type %s", op.keyType)
 	}
+	// Note, we log the key ID for info purposes and is safe because it isn't
+	// sensitive. NEVER log the spreadKey.
+	op.log.Info("generating spread key", "keyID", keyID)
 	return fmt.Sprintf(`{\"%s\":\"%s\"}`, keyID, spreadKey), nil
 }
 

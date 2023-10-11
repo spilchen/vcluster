@@ -148,7 +148,7 @@ func (op *nmaSpreadSecurityOp) processResult(_ *OpEngineExecContext) error {
 			allErrs = errors.Join(allErrs, result.err)
 		}
 	}
-	return nil
+	return allErrs
 }
 
 // setRuntimeParms will set options based on runtime context.

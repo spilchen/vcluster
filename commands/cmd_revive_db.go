@@ -15,8 +15,8 @@ import (
  */
 type CmdReviveDB struct {
 	CmdBase
-	reviveDBOptions       *vclusterops.VReviveDatabaseOptions
-	communalStorageParams *string // raw input from user, need further processing
+	reviveDBOptions     *vclusterops.VReviveDatabaseOptions
+	configurationParams *string // raw input from user, need further processing
 }
 
 func makeCmdReviveDB() *CmdReviveDB {
@@ -35,8 +35,8 @@ func makeCmdReviveDB() *CmdReviveDB {
 
 	// optional flags
 	newCmd.ipv6 = newCmd.parser.Bool("ipv6", false, util.GetOptionalFlagMsg("Revive database with IPv6 hosts"))
-	newCmd.communalStorageParams = newCmd.parser.String("communal-storage-params", "", util.GetOptionalFlagMsg(
-		"Comma-separated list of NAME=VALUE pairs for communal storage parameters"))
+	newCmd.configurationParams = newCmd.parser.String("configuration-params", "", util.GetOptionalFlagMsg(
+		"Comma-separated list of NAME=VALUE pairs for configuration parameters"))
 	reviveDBOptions.ForceRemoval = newCmd.parser.Bool("force-removal", false,
 		util.GetOptionalFlagMsg("Force removal of existing database directories(exclude user storage directories) before reviving the database"))
 	reviveDBOptions.LoadCatalogTimeout = newCmd.parser.Uint("load-catalog-timeout", util.DefaultLoadCatalogTimeoutSeconds,
@@ -81,12 +81,12 @@ func (c *CmdReviveDB) validateParse() error {
 	vlog.LogInfo("[%s] Called validateParse()", c.CommandType())
 
 	// check the format of communal storage params string, and parse it into configParams
-	communalStorageParams, err := util.ParseConfigParams(*c.communalStorageParams)
+	configurationParams, err := util.ParseConfigParams(*c.configurationParams)
 	if err != nil {
 		return err
 	}
-	if communalStorageParams != nil {
-		c.reviveDBOptions.CommunalStorageParameters = communalStorageParams
+	if configurationParams != nil {
+		c.reviveDBOptions.ConfigurationParameters = configurationParams
 	}
 
 	// when --display-only is provided, we do not need to parse some base options like hostListStr

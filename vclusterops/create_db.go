@@ -38,7 +38,6 @@ type VCreateDatabaseOptions struct {
 	DepotSize                *string // like 10G
 	GetAwsCredentialsFromEnv *bool
 	// part 3: optional info
-	ConfigurationParameters   map[string]string
 	ForceCleanupOnFailure     *bool
 	ForceRemovalAtCreation    *bool
 	SkipPackageInstall        *bool
@@ -80,7 +79,6 @@ func (opt *VCreateDatabaseOptions) SetDefaultValues() {
 	opt.GetAwsCredentialsFromEnv = new(bool)
 
 	// optional info
-	opt.ConfigurationParameters = make(map[string]string)
 	opt.ForceCleanupOnFailure = new(bool)
 	opt.ForceRemovalAtCreation = new(bool)
 	opt.SkipPackageInstall = new(bool)
@@ -514,7 +512,7 @@ func (vcc *VClusterCommands) produceCreateDBBootstrapInstructions(
 		&nmaReadCatalogEditorOp,
 	)
 
-	if enabled, keyType := options.isSpreadEncryptionEnabled(options.ConfigurationParameters); enabled {
+	if enabled, keyType := options.isSpreadEncryptionEnabled(); enabled {
 		instructions = append(instructions,
 			vcc.addEnableSpreadEncryptionOp(keyType),
 		)

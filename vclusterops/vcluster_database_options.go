@@ -38,10 +38,10 @@ type DatabaseOptions struct {
 	ConfigDirectory *string
 
 	// part 2: Eon database info
-	DepotPrefix               *string
-	IsEon                     vstruct.NullableBool
-	CommunalStorageLocation   *string
-	CommunalStorageParameters map[string]string
+	DepotPrefix             *string
+	IsEon                   vstruct.NullableBool
+	CommunalStorageLocation *string
+	ConfigurationParameters map[string]string
 
 	// part 3: authentication info
 	UserName *string
@@ -82,7 +82,7 @@ func (opt *DatabaseOptions) SetDefaultValues() {
 	opt.Ipv6 = vstruct.NotSet
 	opt.IsEon = vstruct.NotSet
 	opt.CommunalStorageLocation = new(string)
-	opt.CommunalStorageParameters = make(map[string]string)
+	opt.ConfigurationParameters = make(map[string]string)
 }
 
 func (opt *DatabaseOptions) CheckNilPointerParams() error {
@@ -433,7 +433,7 @@ func (opt *DatabaseOptions) getVDBWhenDBIsDown() (vdb VCoordinationDatabase, err
 	var instructions2 []ClusterOp
 	sourceFilePath := opt.getDescriptionFilePath()
 	nmaDownLoadFileOp, err := makeNMADownloadFileOp(opt.Hosts, sourceFilePath, destinationFilePath, catalogPath,
-		opt.CommunalStorageParameters, &vdb2)
+		opt.ConfigurationParameters, &vdb2)
 	if err != nil {
 		return vdb, err
 	}
@@ -487,10 +487,10 @@ func (opt *DatabaseOptions) getDescriptionFilePath() string {
 	return descriptionFilePath
 }
 
-func (opt *DatabaseOptions) isSpreadEncryptionEnabled(parms map[string]string) (enabled bool, encryptionType string) {
+func (opt *DatabaseOptions) isSpreadEncryptionEnabled() (enabled bool, encryptionType string) {
 	const EncryptSpreadCommConfigName = "encryptspreadcomm"
 	// We cannot use the map lookup because the key name is case insensitive.
-	for key, val := range parms {
+	for key, val := range opt.ConfigurationParameters {
 		if strings.EqualFold(key, EncryptSpreadCommConfigName) {
 			return true, val
 		}

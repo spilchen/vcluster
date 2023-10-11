@@ -142,7 +142,7 @@ func (op *nmaSpreadSecurityOp) processResult(_ *OpEngineExecContext) error {
 		if result.isPassing() {
 			_, err := op.parseAndCheckMapResponse(host, result.content)
 			if err != nil {
-				return errors.Join(allErrs, err)
+				return errors.Join(allErrs, fmt.Errorf("failed to parse response %s: %w", result.content, err))
 			}
 		} else {
 			allErrs = errors.Join(allErrs, result.err)

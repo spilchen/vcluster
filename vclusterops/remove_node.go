@@ -259,14 +259,7 @@ func (vcc *VClusterCommands) produceRemoveNodeInstructions(vdb *VCoordinationDat
 	usePassword := options.usePassword
 	password := options.Password
 
-	if (len(vdb.HostList) - len(options.HostsToRemove)) < ksafetyThreshold {
-		httpsMarkDesignKSafeOp, e := makeHTTPSMarkDesignKSafeOp(vcc.Log, initiatorHost, usePassword, username,
-			password, ksafeValueZero)
-		if e != nil {
-			return instructions, e
-		}
-		instructions = append(instructions, &httpsMarkDesignKSafeOp)
-	}
+	// SPILLY - remove mark design k-safety
 
 	err := vcc.produceMarkEphemeralNodeOps(&instructions, options.HostsToRemove, initiatorHost,
 		usePassword, username, password, vdb.HostNodeMap)

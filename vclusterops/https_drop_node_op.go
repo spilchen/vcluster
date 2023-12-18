@@ -48,11 +48,7 @@ func makeHTTPSDropNodeOp(logger vlog.Printer, vnode string,
 	op.userName = userName
 	op.httpsPassword = httpsPassword
 	op.RequestParams = make(map[string]string)
-	if isEon {
-		op.RequestParams["cascade"] = "true"
-		return op, nil
-	}
-	op.RequestParams["cascade"] = "false"
+	op.RequestParams["cascade"] = "false" // SPILLY - never cascade for drop
 	return op, nil
 }
 

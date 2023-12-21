@@ -153,9 +153,20 @@ func (vcc *VClusterCommands) VRemoveNode(options *VRemoveNodeOptions) (VCoordina
 	// remove_node is aborted if requirements are not met. This may also trim
 	// the host list if requesting some hosts that already don't exist in the
 	// database.
-	options.HostsToRemove, err = checkRemoveNodeRequirements(&vdb, options.HostsToRemove)
+	var missingNodes []string
+	options.HostsToRemove, missingNodes, err = checkRemoveNodeRequirements(&vdb, options.HostsToRemove)
 	if err != nil {
 		return vdb, err
+	}
+	if len(missingNodes) > 0 {
+		vcc.Log.Info("Doing cleanup of nodes missing from database", "missingNodes", missingNodes)
+		// Make a copy of the vdb since we don't want to mess up the one used
+		// for the actual remove node.
+		misingNodesVDB := vdb.copy(nil)
+		err = vcc.doMissingNodesCleanup(&misingNodesVDB, options, missingNodes)
+		if err != nil {
+			return vdb, err
+		}
 	}
 	if len(options.HostsToRemove) == 0 {
 		vcc.Log.Info("Exit early because there are no hosts to remove")
@@ -199,17 +210,19 @@ func (vcc *VClusterCommands) VRemoveNode(options *VRemoveNodeOptions) (VCoordina
 //   - Check the existence of the nodes to remove
 //   - Check if all nodes are up or standby (enterprise only)
 //
-// It will return the list of nodes to remove that exist in the database. This
-// may be an empty list, which is the callers responsibility to handle.
-func checkRemoveNodeRequirements(vdb *VCoordinationDatabase, hostsToRemove []string) ([]string, error) {
+// It will return two lists of nodes. The nodes that are still part of the
+// database and any nodes not in the database anymore.
+func checkRemoveNodeRequirements(vdb *VCoordinationDatabase, hostsToRemove []string) (hostsInDB, hostsNotInDB []string, err error) {
 	if !vdb.IsEon {
 		if vdb.hasAtLeastOneDownNode() {
-			return nil, errors.New("all nodes must be up or standby")
+			return nil, nil, errors.New("all nodes must be up or standby")
 		}
 	}
 
 	// Return the set of nodes to remove that exist in the database
-	return vdb.containNodes(hostsToRemove), nil
+	hostsInDB = vdb.containNodes(hostsToRemove)
+	hostsNotInDB = util.SliceDiff(hostsToRemove, hostsInDB)
+	return hostsInDB, hostsNotInDB, nil
 }
 
 // completeVDBSetting sets some VCoordinationDatabase fields we cannot get yet
@@ -346,6 +359,40 @@ func (vcc *VClusterCommands) produceRemoveNodeInstructions(vdb *VCoordinationDat
 	return instructions, nil
 }
 
+// doMissingNodesCleanup will build a list of instructions to execute for
+// nodes that we are given but don't exist in the catalog. We will do basic
+// cleanup logic for this needed by the operator.
+//
+// The generated instructions will perform the following operations:
+//   - Delete catalog and data directories
+func (vcc *VClusterCommands) doMissingNodesCleanup(vdb *VCoordinationDatabase, options *VRemoveNodeOptions,
+	missingHosts []string) error {
+	nmaGetNodesInfoOp := makeNMAGetNodesInfoOp(vcc.Log, missingHosts, *options.DBName, *options.CatalogPrefix,
+		false /* report all errors */, vdb)
+	instructions := []clusterOp{&nmaGetNodesInfoOp}
+	certs := httpsCerts{key: options.Key, cert: options.Cert, caCert: options.CaCert}
+	opEng := makeClusterOpEngine(instructions, &certs)
+	err := opEng.run(vcc.Log)
+	if err != nil {
+		return fmt.Errorf("failed to get node info for missing nodes: %w", err)
+	}
+
+	// Make a vdb of just the missing hosts. The host list for
+	// nmaDeleteDirectoriesOp uses the host list from the vdb.
+	vdbForDeleteDir := vdb.copy(missingHosts)
+	nmaDeleteDirectoriesOp, err := makeNMADeleteDirectoriesOp(vcc.Log, &vdbForDeleteDir, *options.ForceDelete)
+	if err != nil {
+		return err
+	}
+	instructions = []clusterOp{&nmaDeleteDirectoriesOp}
+	opEng = makeClusterOpEngine(instructions, &certs)
+	err = opEng.run(vcc.Log)
+	if err != nil {
+		return fmt.Errorf("failed to delete directories for missing nodes: %w", err)
+	}
+	return nil
+}
+
 // produceMarkEphemeralNodeOps gets a slice of target hosts and for each of them
 // produces an HTTPSMarkEphemeralNodeOp.
 func (vcc *VClusterCommands) produceMarkEphemeralNodeOps(instructions *[]clusterOp, targetHosts, hosts []string,
@@ -384,7 +431,6 @@ func (vcc *VClusterCommands) produceDropNodeOps(instructions *[]clusterOp, targe
 	useHTTPPassword bool, userName string, httpsPassword *string,
 	hostNodeMap vHostNodeMap, isEon bool) error {
 	for _, host := range targetHosts {
-		// SPILLY - ensure we have logging to know if we are setting the cascade flag
 		httpsDropNodeOp, err := makeHTTPSDropNodeOp(vcc.Log, hostNodeMap[host].Name, hosts,
 			useHTTPPassword, userName, httpsPassword,
 			isEon && hostNodeMap[host].State != util.NodeDownState) // SPILLY - inverted equality to get old behavior

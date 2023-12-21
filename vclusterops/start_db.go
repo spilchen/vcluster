@@ -195,11 +195,14 @@ func (vcc *VClusterCommands) runStartDBPrecheck(options *VStartDatabaseOptions, 
 
 	// if TrimHostList is true,
 	// update the host list as some provided hosts may not exist in the catalog
-	vcc.Log.Info("checking if any input hosts can be trimmed", "trimHostList", *options.TrimHostList)
 	if *options.TrimHostList {
 		var trimmedHostList []string
 		var extraHosts []string
 
+		vcc.Log.Info("checking if any input hosts can be trimmed",
+			"trimHostList", *options.TrimHostList,
+			"hosts", options.Hosts,
+			"hostNodeMap", fmt.Sprintf("%+v", vdb.HostNodeMap))
 		for _, h := range options.Hosts {
 			if _, exist := vdb.HostNodeMap[h]; exist {
 				trimmedHostList = append(trimmedHostList, h)

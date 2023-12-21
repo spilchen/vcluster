@@ -58,6 +58,8 @@ func (op *nmaDeleteDirectoriesOp) buildRequestBody(
 		dbDataPath := filepath.Join(vdb.DataPrefix, vdb.Name)
 		p.Directories = append(p.Directories, dbCatalogPath, dbDataPath)
 
+		op.logger.Info("directories to delete", "directories", p.Directories)
+
 		// force-delete
 		p.ForceDelete = forceDelete
 

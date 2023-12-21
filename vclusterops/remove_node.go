@@ -134,8 +134,12 @@ func (vcc *VClusterCommands) VRemoveNode(options *VRemoveNodeOptions) (VCoordina
 
 	options.DBName = &dbName
 	options.Hosts = hosts
-	// get depot and data prefix from config file or options
+	// get depot, data and catalog prefix from config file or options
 	*options.DepotPrefix, *options.DataPrefix, err = options.getDepotAndDataPrefix(options.Config)
+	if err != nil {
+		return vdb, err
+	}
+	options.CatalogPrefix, err = options.getCatalogPrefix(options.Config)
 	if err != nil {
 		return vdb, err
 	}
@@ -219,7 +223,9 @@ func checkRemoveNodeRequirements(vdb *VCoordinationDatabase, hostsToRemove []str
 		}
 	}
 
-	// Return the set of nodes to remove that exist in the database
+	// Return nodes split into ones that exist in the database and ones that
+	// don't. We could be given a node that doesn't exist if we previously
+	// failed during a remove node request.
 	hostsInDB = vdb.containNodes(hostsToRemove)
 	hostsNotInDB = util.SliceDiff(hostsToRemove, hostsInDB)
 	return hostsInDB, hostsNotInDB, nil

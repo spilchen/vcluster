@@ -18,7 +18,6 @@ package vclusterops
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/vertica/vcluster/vclusterops/util"
 	"github.com/vertica/vcluster/vclusterops/vlog"
@@ -151,11 +150,18 @@ func (vcc *VClusterCommands) VRemoveNode(options *VRemoveNodeOptions) (VCoordina
 		return vdb, err
 	}
 
-	// remove_node is aborted if requirements are not met
-	err = checkRemoveNodeRequirements(&vdb, options.HostsToRemove)
+	// remove_node is aborted if requirements are not met. This may also trim
+	// the host list if requesting some hosts that already don't exist in the
+	// database.
+	options.HostsToRemove, err = checkRemoveNodeRequirements(&vdb, options.HostsToRemove)
 	if err != nil {
 		return vdb, err
 	}
+	if len(options.HostsToRemove) == 0 {
+		vcc.Log.Info("Exit early because there are no hosts to remove")
+		return vdb, nil
+	}
+	vcc.Log.Info("validated input hosts", "HostsToRemove", options.HostsToRemove)
 
 	err = options.setInitiator(vdb.PrimaryUpNodes)
 	if err != nil {
@@ -189,21 +195,21 @@ func (vcc *VClusterCommands) VRemoveNode(options *VRemoveNodeOptions) (VCoordina
 	return vdb.copy(remainingHosts), nil
 }
 
-// checkRemoveNodeRequirements validates  the following remove_node requirements:
+// checkRemoveNodeRequirements validates the following remove_node requirements:
 //   - Check the existence of the nodes to remove
 //   - Check if all nodes are up or standby (enterprise only)
-func checkRemoveNodeRequirements(vdb *VCoordinationDatabase, hostsToRemove []string) error {
-	if nodes := vdb.containNodes(hostsToRemove); len(nodes) != len(hostsToRemove) {
-		notFoundHosts := util.SliceDiff(hostsToRemove, nodes)
-		return fmt.Errorf("%s do not exist in the database", strings.Join(notFoundHosts, ","))
-	}
+//
+// It will return the list of nodes to remove that exist in the database. This
+// may be an empty list, which is the callers responsibility to handle.
+func checkRemoveNodeRequirements(vdb *VCoordinationDatabase, hostsToRemove []string) ([]string, error) {
 	if !vdb.IsEon {
 		if vdb.hasAtLeastOneDownNode() {
-			return errors.New("all nodes must be up or standby")
+			return nil, errors.New("all nodes must be up or standby")
 		}
 	}
 
-	return nil
+	// Return the set of nodes to remove that exist in the database
+	return vdb.containNodes(hostsToRemove), nil
 }
 
 // completeVDBSetting sets some VCoordinationDatabase fields we cannot get yet

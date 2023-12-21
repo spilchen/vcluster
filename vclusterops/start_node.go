@@ -175,6 +175,13 @@ func (vcc *VClusterCommands) VStartNodes(options *VStartNodesOptions) error {
 	restartNodeInfo.HostsToStart = append(restartNodeInfo.HostsToStart, restartNodeInfo.ReIPList...)
 	restartNodeInfo.HostsToStart = append(restartNodeInfo.HostsToStart, hostsNoNeedToReIP...)
 
+	// If no nodes found to start. We can simply exit here. This can happen if
+	// given a node list of nodes that don't exist in the database anymore.
+	if len(restartNodeInfo.HostsToStart) == 0 {
+		vcc.Log.Info("Exiting early because there are no nodes to start.")
+		return nil
+	}
+
 	// produce restart_node instructions
 	instructions, err := vcc.produceStartNodesInstructions(restartNodeInfo, options, &vdb)
 	if err != nil {

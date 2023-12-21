@@ -95,6 +95,7 @@ func (op *nmaGetNodesInfoOp) processResult(_ *opEngineExecContext) error {
 			} else {
 				vnode.Address = host
 				op.vdb.HostNodeMap[host] = &vnode
+				op.logger.Info("Update vdb with response", "host", host, "vnode", vnode)
 			}
 		} else if result.isInternalError() && op.ignoreInternalErrors {
 			op.logger.Error(result.err, "NMA node info reported internal error", "Host", host)

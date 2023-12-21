@@ -386,6 +386,10 @@ func (vcc *VClusterCommands) doMissingNodesCleanup(vdb *VCoordinationDatabase, o
 	// Make a vdb of just the missing hosts. The host list for
 	// nmaDeleteDirectoriesOp uses the host list from the vdb.
 	vdbForDeleteDir := vdb.copy(missingHosts)
+	err = options.completeVDBSetting(&vdbForDeleteDir)
+	if err != nil {
+		return err
+	}
 	nmaDeleteDirectoriesOp, err := makeNMADeleteDirectoriesOp(vcc.Log, &vdbForDeleteDir, *options.ForceDelete)
 	if err != nil {
 		return err

@@ -47,7 +47,9 @@ func (op *nmaDeleteDirectoriesOp) buildRequestBody(
 		p := deleteDirParams{}
 		// directories
 		p.Directories = append(p.Directories, vnode.CatalogPath)
-		p.Directories = append(p.Directories, vnode.StorageLocations...)
+		if len(vnode.StorageLocations) > 0 {
+			p.Directories = append(p.Directories, vnode.StorageLocations...)
+		}
 
 		if vdb.UseDepot {
 			dbDepotPath := filepath.Join(vdb.DepotPrefix, vdb.Name)

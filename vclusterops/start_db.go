@@ -195,6 +195,7 @@ func (vcc *VClusterCommands) runStartDBPrecheck(options *VStartDatabaseOptions, 
 
 	// if TrimHostList is true,
 	// update the host list as some provided hosts may not exist in the catalog
+	vcc.Log.Info("checking if any input hosts can be trimmed", "trimHostList", *options.TrimHostList)
 	if *options.TrimHostList {
 		var trimmedHostList []string
 		var extraHosts []string
@@ -228,6 +229,7 @@ func (vcc *VClusterCommands) runStartDBPrecheck(options *VStartDatabaseOptions, 
 func (vcc *VClusterCommands) produceStartDBPreCheck(options *VStartDatabaseOptions, vdb *VCoordinationDatabase) ([]clusterOp, error) {
 	var instructions []clusterOp
 
+	// SPILLY - this is where we fail. The hosts has one where the NMA isn't running. That doesn't sound right. Even if the
 	nmaHealthOp := makeNMAHealthOp(vcc.Log, options.Hosts)
 	// need username for https operations
 	err := options.setUsePassword(vcc.Log)

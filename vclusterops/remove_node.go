@@ -378,8 +378,10 @@ func (vcc *VClusterCommands) produceDropNodeOps(instructions *[]clusterOp, targe
 	useHTTPPassword bool, userName string, httpsPassword *string,
 	hostNodeMap vHostNodeMap, isEon bool) error {
 	for _, host := range targetHosts {
+		// SPILLY - ensure we have logging to know if we are setting the cascade flag
 		httpsDropNodeOp, err := makeHTTPSDropNodeOp(vcc.Log, hostNodeMap[host].Name, hosts,
-			useHTTPPassword, userName, httpsPassword, isEon)
+			useHTTPPassword, userName, httpsPassword,
+			isEon && hostNodeMap[host].State != util.NodeDownState) // SPILLY - inverted equality to get old behavior
 		if err != nil {
 			return err
 		}

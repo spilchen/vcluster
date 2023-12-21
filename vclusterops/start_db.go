@@ -160,7 +160,7 @@ func (vcc *VClusterCommands) VStartDatabase(options *VStartDatabaseOptions) erro
 	}
 
 	// produce start_db instructions
-	instructions, err := vcc.produceStartDBInstructions(options)
+	instructions, err := vcc.produceStartDBInstructions(options, &vdb)
 	if err != nil {
 		return fmt.Errorf("fail to production instructions: %w", err)
 	}
@@ -180,7 +180,7 @@ func (vcc *VClusterCommands) VStartDatabase(options *VStartDatabaseOptions) erro
 
 func (vcc *VClusterCommands) runStartDBPrecheck(options *VStartDatabaseOptions, vdb *VCoordinationDatabase) error {
 	// pre-instruction to perform basic checks and get basic information
-	preInstructions, err := vcc.produceStartDBPreCheck(options, vdb)
+	preInstructions, err := vcc.produceStartDBPreCheck(options, vdb, *options.TrimHostList)
 	if err != nil {
 		return fmt.Errorf("fail to production instructions: %w", err)
 	}
@@ -230,8 +230,9 @@ func (vcc *VClusterCommands) runStartDBPrecheck(options *VStartDatabaseOptions, 
 //   - Check NMA connectivity
 //   - Check to see if any dbs run
 //   - Get nodes' information by calling the NMA /nodes endpoint
-//   - Use NMA /catalog/database to get the best source node for spread.conf and vertica.conf
-func (vcc *VClusterCommands) produceStartDBPreCheck(options *VStartDatabaseOptions, vdb *VCoordinationDatabase) ([]clusterOp, error) {
+//   - Find latest catalog to use for trimming of extra nodes
+func (vcc *VClusterCommands) produceStartDBPreCheck(options *VStartDatabaseOptions, vdb *VCoordinationDatabase,
+	findLatestCatalog bool) ([]clusterOp, error) {
 	var instructions []clusterOp
 
 	nmaHealthOp := makeNMAHealthOp(vcc.Log, options.Hosts)
@@ -258,12 +259,13 @@ func (vcc *VClusterCommands) produceStartDBPreCheck(options *VStartDatabaseOptio
 		instructions = append(instructions, &nmaGetNodesInfoOp)
 	}
 
-	// vdb here should contains only primary nodes
-	nmaReadCatalogEditorOp, err := makeNMAReadCatalogEditorOp(vcc.Log, vdb)
-	if err != nil {
-		return instructions, err
+	if findLatestCatalog {
+		nmaReadCatalogEditorOp, err := makeNMAReadCatalogEditorOp(vcc.Log, vdb)
+		if err != nil {
+			return instructions, err
+		}
+		instructions = append(instructions, &nmaReadCatalogEditorOp)
 	}
-	instructions = append(instructions, &nmaReadCatalogEditorOp)
 
 	return instructions, nil
 }
@@ -273,17 +275,26 @@ func (vcc *VClusterCommands) produceStartDBPreCheck(options *VStartDatabaseOptio
 //
 // The generated instructions will later perform the following operations necessary
 // for a successful start_db:
+//   - Use NMA /catalog/database to get the best source node for spread.conf and vertica.conf
 //   - Check Vertica versions
 //   - Sync the confs to the rest of nodes who have lower catalog version (results from the previous step)
 //   - Start all nodes of the database
 //   - Poll node startup
 //   - Sync catalog (Eon mode only)
-func (vcc *VClusterCommands) produceStartDBInstructions(options *VStartDatabaseOptions) ([]clusterOp, error) {
+func (vcc *VClusterCommands) produceStartDBInstructions(options *VStartDatabaseOptions, vdb *VCoordinationDatabase) ([]clusterOp, error) {
 	var instructions []clusterOp
 
+	// vdb here should contains only primary nodes
+	nmaReadCatalogEditorOp, err := makeNMAReadCatalogEditorOp(vcc.Log, vdb)
+	if err != nil {
+		return instructions, err
+	}
 	// require to have the same vertica version
 	nmaVerticaVersionOp := makeNMAVerticaVersionOpWithoutHosts(vcc.Log, true)
-	instructions = append(instructions, &nmaVerticaVersionOp)
+	instructions = append(instructions,
+		&nmaReadCatalogEditorOp,
+		&nmaVerticaVersionOp,
+	)
 
 	if enabled, keyType := options.isSpreadEncryptionEnabled(); enabled {
 		instructions = append(instructions,

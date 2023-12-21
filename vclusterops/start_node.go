@@ -154,8 +154,11 @@ func (vcc *VClusterCommands) VStartNodes(options *VStartNodesOptions) error {
 	for nodename, newIP := range options.Nodes {
 		oldIP, ok := hostNodeNameMap[nodename]
 		if !ok {
-			vcc.Log.PrintError("fail to provide a non-existent node name %s", nodename)
-			return fmt.Errorf("the node with the provided name %s does not exist", nodename)
+			// We can get here if the operator gives a node that we were in the
+			// middle of removing. Log a warning and continue without starting
+			// that node.
+			vcc.Log.PrintWarning("skipping start of a non-existent node name %s", nodename)
+			continue
 		}
 		// if the IP that is given is different than the IP in the catalog, a re-ip is necessary
 		if oldIP != newIP {

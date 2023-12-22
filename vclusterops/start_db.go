@@ -146,7 +146,6 @@ func (vcc *VClusterCommands) VStartDatabase(options *VStartDatabaseOptions) erro
 			vdbNew.filterPrimaryNodes()
 			vdb = vdbNew
 		} else {
-			// SPILLY - didn't we try going through the above?
 			// When communal storage location is missing, we only log a warning message
 			// because fail to read cluster_config.json will not affect start_db in most of the cases.
 			vcc.Log.PrintWarning("communal storage location is not specified for an eon database," +
@@ -161,7 +160,7 @@ func (vcc *VClusterCommands) VStartDatabase(options *VStartDatabaseOptions) erro
 	}
 
 	// produce start_db instructions
-	instructions, err := vcc.produceStartDBInstructions(options, &vdb)
+	instructions, err := vcc.produceStartDBInstructions(options)
 	if err != nil {
 		return fmt.Errorf("fail to production instructions: %w", err)
 	}
@@ -181,7 +180,7 @@ func (vcc *VClusterCommands) VStartDatabase(options *VStartDatabaseOptions) erro
 
 func (vcc *VClusterCommands) runStartDBPrecheck(options *VStartDatabaseOptions, vdb *VCoordinationDatabase) error {
 	// pre-instruction to perform basic checks and get basic information
-	preInstructions, err := vcc.produceStartDBPreCheck(options, vdb, !*options.TrimHostList) // SPILLY - inverted trimHostList check
+	preInstructions, err := vcc.produceStartDBPreCheck(options, vdb, *options.TrimHostList)
 	if err != nil {
 		return fmt.Errorf("fail to production instructions: %w", err)
 	}
@@ -197,7 +196,7 @@ func (vcc *VClusterCommands) runStartDBPrecheck(options *VStartDatabaseOptions, 
 	// If requested, remove any provided hosts that are not in the catalog. Use
 	// the vdb that we just fetched by the catalog editor. It will be the from
 	// the latest catalog.
-	if !*options.TrimHostList { // SPILLY -invert check
+	if *options.TrimHostList {
 		options.Hosts = vcc.removeHostsNotInCatalog(&clusterOpEngine.execContext.nmaVDatabase, options.Hosts)
 	}
 
@@ -284,18 +283,16 @@ func (vcc *VClusterCommands) produceStartDBPreCheck(options *VStartDatabaseOptio
 //   - Start all nodes of the database
 //   - Poll node startup
 //   - Sync catalog (Eon mode only)
-func (vcc *VClusterCommands) produceStartDBInstructions(options *VStartDatabaseOptions, vdb *VCoordinationDatabase) ([]clusterOp, error) {
+func (vcc *VClusterCommands) produceStartDBInstructions(options *VStartDatabaseOptions) ([]clusterOp, error) {
 	var instructions []clusterOp
 
+	// SPILLY - can we avoid this?
 	// vdb here should contains only primary nodes
-	nmaReadCatalogEditorOp, err := makeNMAReadCatalogEditorOp(vcc.Log, vdb)
-	if err != nil {
-		return instructions, err
-	}
+	// use to call makeNMAReadCatalogEditorOp
 	// require to have the same vertica version
 	nmaVerticaVersionOp := makeNMAVerticaVersionOpWithoutHosts(vcc.Log, true)
 	instructions = append(instructions,
-		&nmaReadCatalogEditorOp,
+		// &nmaReadCatalogEditorOp, SPILLY
 		&nmaVerticaVersionOp,
 	)
 

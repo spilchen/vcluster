@@ -63,6 +63,7 @@ func makeCmdRemoveNode() *CmdRemoveNode {
 	// Eon flags
 	// VER-88096: get all nodes information from the database and remove this option
 	removeNodeOptions.DepotPrefix = newCmd.parser.String("depot-path", "", util.GetEonFlagMsg("Path to depot directory"))
+	// SPILLY - get catalog-path too?
 
 	newCmd.removeNodeOptions = &removeNodeOptions
 	return newCmd

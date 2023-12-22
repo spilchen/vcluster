@@ -146,6 +146,7 @@ func (vcc *VClusterCommands) VStartDatabase(options *VStartDatabaseOptions) erro
 			vdbNew.filterPrimaryNodes()
 			vdb = vdbNew
 		} else {
+			// SPILLY - didn't we try going through the above?
 			// When communal storage location is missing, we only log a warning message
 			// because fail to read cluster_config.json will not affect start_db in most of the cases.
 			vcc.Log.PrintWarning("communal storage location is not specified for an eon database," +
@@ -180,7 +181,7 @@ func (vcc *VClusterCommands) VStartDatabase(options *VStartDatabaseOptions) erro
 
 func (vcc *VClusterCommands) runStartDBPrecheck(options *VStartDatabaseOptions, vdb *VCoordinationDatabase) error {
 	// pre-instruction to perform basic checks and get basic information
-	preInstructions, err := vcc.produceStartDBPreCheck(options, vdb, *options.TrimHostList)
+	preInstructions, err := vcc.produceStartDBPreCheck(options, vdb, !*options.TrimHostList) // SPILLY - inverted trimHostList check
 	if err != nil {
 		return fmt.Errorf("fail to production instructions: %w", err)
 	}
@@ -196,7 +197,7 @@ func (vcc *VClusterCommands) runStartDBPrecheck(options *VStartDatabaseOptions, 
 	// If requested, remove any provided hosts that are not in the catalog. Use
 	// the vdb that we just fetched by the catalog editor. It will be the from
 	// the latest catalog.
-	if *options.TrimHostList {
+	if !*options.TrimHostList { // SPILLY -invert check
 		options.Hosts = vcc.removeHostsNotInCatalog(&clusterOpEngine.execContext.nmaVDatabase, options.Hosts)
 	}
 

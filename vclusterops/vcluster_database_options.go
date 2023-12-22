@@ -466,6 +466,11 @@ func (opt *DatabaseOptions) getVDBWhenDBIsDown(vcc *VClusterCommands) (vdb VCoor
 		return vdb, err
 	}
 
+	// SPILLY - I don't understand why this part didn't work.
+	// SPILLY - do we download just one file? Yes, we pick one node. We didn't
+	// sync the catalog, so the cluster_config.json we download still has the
+	// removed nodes
+
 	// step 2: get node details from cluster_config.json
 	vdb2 := VCoordinationDatabase{}
 	var instructions2 []clusterOp

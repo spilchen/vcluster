@@ -108,9 +108,10 @@ func (options *VStartNodesOptions) validateAnalyzeOptions(logger vlog.Printer) e
 }
 
 // VStartNodes starts the given nodes for a cluster that has not yet lost
-// cluster quorum and returns any error encountered.
-// If necessary, it updates the node's IP in the Vertica catalog.
-// If cluster quorum is already lost, use VStartDatabase.
+// cluster quorum. Returns any error encountered. If necessary, it updates the
+// node's IP in the Vertica catalog. If cluster quorum is already lost, use
+// VStartDatabase. It will skip any nodes given that no longer exist in the
+// catalog.
 func (vcc *VClusterCommands) VStartNodes(options *VStartNodesOptions) error {
 	/*
 	 *   - Produce Instructions
@@ -154,10 +155,11 @@ func (vcc *VClusterCommands) VStartNodes(options *VStartNodesOptions) error {
 	for nodename, newIP := range options.Nodes {
 		oldIP, ok := hostNodeNameMap[nodename]
 		if !ok {
-			// We can get here if the operator gives a node that we were in the
+			// We can get here if the caller requests a node that we were in the
 			// middle of removing. Log a warning and continue without starting
 			// that node.
-			vcc.Log.PrintWarning("skipping start of a non-existent node name %s", nodename)
+			vcc.Log.Info("skipping start of node that doesn't exist in the catalog",
+				"nodename", nodename, "newIP", newIP)
 			continue
 		}
 		// if the IP that is given is different than the IP in the catalog, a re-ip is necessary
@@ -176,9 +178,9 @@ func (vcc *VClusterCommands) VStartNodes(options *VStartNodesOptions) error {
 	restartNodeInfo.HostsToStart = append(restartNodeInfo.HostsToStart, hostsNoNeedToReIP...)
 
 	// If no nodes found to start. We can simply exit here. This can happen if
-	// given a node list of nodes that don't exist in the database anymore.
+	// given a list of nodes that aren't in the catalog any longer.
 	if len(restartNodeInfo.HostsToStart) == 0 {
-		vcc.Log.Info("Exiting early because there are no nodes to start.")
+		vcc.Log.Info("None of the nodes provided are in the catalog. There is nothing to start.")
 		return nil
 	}
 

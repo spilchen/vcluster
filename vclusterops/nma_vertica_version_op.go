@@ -99,7 +99,6 @@ func (op *nmaVerticaVersionOp) prepare(execContext *opEngineExecContext) error {
 		 *
 	*/
 	if len(op.hosts) == 0 {
-		op.logger.Info("No input hosts provided", "db is up", op.vdb != nil)
 		if op.vdb != nil {
 			// db is up
 			op.HasIncomingSCNames = true

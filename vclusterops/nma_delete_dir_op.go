@@ -71,7 +71,7 @@ func (op *nmaDeleteDirectoriesOp) buildRequestBody(
 		}
 		op.hostRequestBodyMap[h] = string(dataBytes)
 
-		op.logger.V(1).Info("delete directory params", "host", h, "params", p)
+		op.logger.Info("delete directory params", "host", h, "params", p)
 	}
 
 	return nil

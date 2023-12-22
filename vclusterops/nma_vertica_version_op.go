@@ -125,7 +125,9 @@ func (op *nmaVerticaVersionOp) prepare(execContext *opEngineExecContext) error {
 			if execContext.nmaVDatabase.CommunalStorageLocation != "" {
 				op.IsEon = true
 			}
+			op.logger.Info("SPILLY got here as expected")
 			for host, vnode := range execContext.nmaVDatabase.HostNodeMap {
+				op.logger.Info("SPILLY found host", "host", host)
 				op.hosts = append(op.hosts, host)
 				// initialize the SCToHostVersionMap with empty versions
 				sc := vnode.Subcluster.Name

@@ -58,8 +58,6 @@ func (op *nmaDeleteDirectoriesOp) buildRequestBody(
 		dbDataPath := filepath.Join(vdb.DataPrefix, vdb.Name)
 		p.Directories = append(p.Directories, dbCatalogPath, dbDataPath)
 
-		op.logger.Info("directories to delete", "directories", p.Directories)
-
 		// force-delete
 		p.ForceDelete = forceDelete
 
@@ -73,7 +71,7 @@ func (op *nmaDeleteDirectoriesOp) buildRequestBody(
 		}
 		op.hostRequestBodyMap[h] = string(dataBytes)
 
-		op.logger.Info("delete directory params", "host", h, "params", p)
+		op.logger.V(1).Info("delete directory params", "host", h, "params", p)
 	}
 
 	return nil

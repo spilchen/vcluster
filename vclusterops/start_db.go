@@ -153,8 +153,12 @@ func (vcc *VClusterCommands) VStartDatabase(options *VStartDatabaseOptions) erro
 		}
 	}
 
+	// create a VClusterOpEngine for start_db instructions, and add certs to the engine
+	certs := httpsCerts{key: options.Key, cert: options.Cert, caCert: options.CaCert}
+	clusterOpEngine := makeClusterOpEngineWithNoInstructions(&certs)
+
 	// start_db pre-checks and get basic info
-	err = vcc.runStartDBPrecheck(options, &vdb)
+	err = vcc.runStartDBPrecheck(&clusterOpEngine, options, &vdb)
 	if err != nil {
 		return err
 	}
@@ -165,11 +169,8 @@ func (vcc *VClusterCommands) VStartDatabase(options *VStartDatabaseOptions) erro
 		return fmt.Errorf("fail to production instructions: %w", err)
 	}
 
-	// create a VClusterOpEngine for start_db instructions, and add certs to the engine
-	certs := httpsCerts{key: options.Key, cert: options.Cert, caCert: options.CaCert}
-	clusterOpEngine := makeClusterOpEngine(instructions, &certs)
-
 	// Give the instructions to the VClusterOpEngine to run
+	clusterOpEngine.resetInstructions(instructions)
 	runError := clusterOpEngine.run(vcc.Log)
 	if runError != nil {
 		return fmt.Errorf("fail to start database: %w", runError)
@@ -178,16 +179,16 @@ func (vcc *VClusterCommands) VStartDatabase(options *VStartDatabaseOptions) erro
 	return nil
 }
 
-func (vcc *VClusterCommands) runStartDBPrecheck(options *VStartDatabaseOptions, vdb *VCoordinationDatabase) error {
+func (vcc *VClusterCommands) runStartDBPrecheck(clusterOpEngine *VClusterOpEngine, options *VStartDatabaseOptions,
+	vdb *VCoordinationDatabase) error {
 	// pre-instruction to perform basic checks and get basic information
-	preInstructions, err := vcc.produceStartDBPreCheck(options, vdb, *options.TrimHostList)
+	preInstructions, err := vcc.produceStartDBPreCheck(options, vdb)
 	if err != nil {
 		return fmt.Errorf("fail to production instructions: %w", err)
 	}
 
 	// create a VClusterOpEngine for pre-check, and add certs to the engine
-	certs := httpsCerts{key: options.Key, cert: options.Cert, caCert: options.CaCert}
-	clusterOpEngine := makeClusterOpEngine(preInstructions, &certs)
+	clusterOpEngine.resetInstructions(preInstructions)
 	runError := clusterOpEngine.run(vcc.Log)
 	if runError != nil {
 		return fmt.Errorf("fail to start database pre-checks: %w", runError)
@@ -232,9 +233,8 @@ func (vcc *VClusterCommands) removeHostsNotInCatalog(vdb *nmaVDatabase, hosts []
 //   - Check NMA connectivity
 //   - Check to see if any dbs run
 //   - Get nodes' information by calling the NMA /nodes endpoint
-//   - Find latest catalog to use for removal of nodes not in the catalog
-func (vcc *VClusterCommands) produceStartDBPreCheck(options *VStartDatabaseOptions, vdb *VCoordinationDatabase,
-	findLatestCatalog bool) ([]clusterOp, error) {
+//   - Use catalog editor to find latest catalog.
+func (vcc *VClusterCommands) produceStartDBPreCheck(options *VStartDatabaseOptions, vdb *VCoordinationDatabase) ([]clusterOp, error) {
 	var instructions []clusterOp
 
 	nmaHealthOp := makeNMAHealthOp(vcc.Log, options.Hosts)
@@ -261,13 +261,11 @@ func (vcc *VClusterCommands) produceStartDBPreCheck(options *VStartDatabaseOptio
 		instructions = append(instructions, &nmaGetNodesInfoOp)
 	}
 
-	if findLatestCatalog {
-		nmaReadCatalogEditorOp, err := makeNMAReadCatalogEditorOp(vcc.Log, vdb)
-		if err != nil {
-			return instructions, err
-		}
-		instructions = append(instructions, &nmaReadCatalogEditorOp)
+	nmaReadCatalogEditorOp, err := makeNMAReadCatalogEditorOp(vcc.Log, vdb)
+	if err != nil {
+		return instructions, err
 	}
+	instructions = append(instructions, &nmaReadCatalogEditorOp)
 
 	return instructions, nil
 }
@@ -286,13 +284,12 @@ func (vcc *VClusterCommands) produceStartDBPreCheck(options *VStartDatabaseOptio
 func (vcc *VClusterCommands) produceStartDBInstructions(options *VStartDatabaseOptions) ([]clusterOp, error) {
 	var instructions []clusterOp
 
-	// SPILLY - can we avoid this?
-	// vdb here should contains only primary nodes
-	// use to call makeNMAReadCatalogEditorOp
+	// vdb here should contains only primary nodes. We are going to reuse the
+	// clusterOpEngine so no need to read catalog editor again.
+
 	// require to have the same vertica version
 	nmaVerticaVersionOp := makeNMAVerticaVersionOpWithoutHosts(vcc.Log, true)
 	instructions = append(instructions,
-		// &nmaReadCatalogEditorOp, SPILLY
 		&nmaVerticaVersionOp,
 	)
 

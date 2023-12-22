@@ -27,11 +27,19 @@ type VClusterOpEngine struct {
 	execContext  *opEngineExecContext
 }
 
+func makeClusterOpEngineWithNoInstructions(certs *httpsCerts) VClusterOpEngine {
+	return makeClusterOpEngine(nil, certs)
+}
+
 func makeClusterOpEngine(instructions []clusterOp, certs *httpsCerts) VClusterOpEngine {
 	newClusterOpEngine := VClusterOpEngine{}
 	newClusterOpEngine.instructions = instructions
 	newClusterOpEngine.certs = certs
 	return newClusterOpEngine
+}
+
+func (opEngine *VClusterOpEngine) resetInstructions(newInstructions []clusterOp) {
+	opEngine.instructions = newInstructions
 }
 
 func (opEngine *VClusterOpEngine) shouldGetCertsFromOptions() bool {

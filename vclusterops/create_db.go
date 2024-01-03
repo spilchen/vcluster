@@ -16,6 +16,7 @@
 package vclusterops
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -423,7 +424,8 @@ func (vcc *VClusterCommands) VCreateDatabase(options *VCreateDatabaseOptions) (V
 		vcc.Log.Error(err, "fail to create database")
 		return vdb, err
 	}
-	return vdb, nil
+	// SPILLY - add fake error
+	return vdb, errors.New("bad stuff happened")
 }
 
 // produceCreateDBInstructions will build a list of instructions to execute for

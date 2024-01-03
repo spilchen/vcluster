@@ -446,7 +446,7 @@ func (vcc *VClusterCommands) produceDropNodeOps(instructions *[]clusterOp, targe
 	for _, host := range targetHosts {
 		httpsDropNodeOp, err := makeHTTPSDropNodeOp(vcc.Log, hostNodeMap[host].Name, hosts,
 			useHTTPPassword, userName, httpsPassword,
-			isEon && hostNodeMap[host].State == util.NodeDownState)
+			isEon) // SPILLY removed to force crash && hostNodeMap[host].State == util.NodeDownState)
 		if err != nil {
 			return err
 		}

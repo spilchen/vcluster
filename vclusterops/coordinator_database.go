@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/vertica/vcluster/vclusterops/util"
 	"github.com/vertica/vcluster/vclusterops/vlog"
 	"golang.org/x/exp/maps"
@@ -267,14 +268,11 @@ func (vdb *VCoordinationDatabase) getSCNames() []string {
 // containNodes determines which nodes are in the vdb and which ones are not.
 // The node is determined by looking up the host address.
 func (vdb *VCoordinationDatabase) containNodes(nodes []string) (nodesInDB, nodesNotInDB []string) {
-	hostSet := make(map[string]any)
-	for _, n := range nodes {
-		hostSet[n] = struct{}{}
-	}
+	hostSet := mapset.NewSet(nodes...)
 	nodesInDB = []string{}
 	for _, vnode := range vdb.HostNodeMap {
 		address := vnode.Address
-		if _, exist := hostSet[address]; exist {
+		if exist := hostSet.Contains(address); exist {
 			nodesInDB = append(nodesInDB, address)
 		}
 	}

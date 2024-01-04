@@ -240,8 +240,8 @@ func (vcc *VClusterCommands) removeHostsNotInCatalog(vdb *nmaVDatabase, hosts []
 // for a successful start_db:
 //   - Check NMA connectivity
 //   - Check to see if any dbs run
-//   - Find latest catalog to use for removal of nodes not in the catalog
 //   - Get nodes' information by calling the NMA /nodes endpoint
+//   - Find latest catalog to use for removal of nodes not in the catalog
 func (vcc *VClusterCommands) produceStartDBPreCheck(options *VStartDatabaseOptions, vdb *VCoordinationDatabase,
 	findLatestCatalog bool) ([]clusterOp, error) {
 	var instructions []clusterOp
@@ -263,21 +263,21 @@ func (vcc *VClusterCommands) produceStartDBPreCheck(options *VStartDatabaseOptio
 		&checkDBRunningOp,
 	)
 
-	// Ensure we have node information from some source.
+	// When we cannot get db info from cluster_config.json, we will fetch it from NMA /nodes endpoint.
+	if len(vdb.HostNodeMap) == 0 {
+		nmaGetNodesInfoOp := makeNMAGetNodesInfoOp(vcc.Log, options.Hosts, *options.DBName, *options.CatalogPrefix,
+			true /* ignore internal errors */, vdb)
+		instructions = append(instructions, &nmaGetNodesInfoOp)
+	}
+
 	if findLatestCatalog {
 		nmaReadCatalogEditorOp, err := makeNMAReadCatalogEditorOp(vcc.Log, vdb)
 		if err != nil {
 			return instructions, err
 		}
 		instructions = append(instructions, &nmaReadCatalogEditorOp)
-	} else {
-		// When we cannot get db info from cluster_config.json, we will fetch it from NMA /nodes endpoint.
-		if len(vdb.HostNodeMap) == 0 {
-			nmaGetNodesInfoOp := makeNMAGetNodesInfoOp(vcc.Log, options.Hosts, *options.DBName, *options.CatalogPrefix,
-				true /* ignore internal errors */, vdb)
-			instructions = append(instructions, &nmaGetNodesInfoOp)
-		}
 	}
+
 	return instructions, nil
 }
 

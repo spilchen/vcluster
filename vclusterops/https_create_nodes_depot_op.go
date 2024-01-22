@@ -23,6 +23,8 @@ import (
 	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
+const Nodes = "nodes/"
+
 type httpsCreateNodesDepotOp struct {
 	opBase
 	opHTTPSBase
@@ -57,7 +59,7 @@ func (op *httpsCreateNodesDepotOp) setupClusterHTTPRequest(hosts []string) error
 		httpRequest := hostHTTPRequest{}
 		httpRequest.Method = PostMethod
 		node := op.HostNodeMap[host]
-		httpRequest.buildHTTPSEndpoint("nodes/" + node.Name + "/depot")
+		httpRequest.buildHTTPSEndpoint(Nodes + node.Name + "/depot")
 		if op.useHTTPPassword {
 			httpRequest.Password = op.httpsPassword
 			httpRequest.Username = op.userName

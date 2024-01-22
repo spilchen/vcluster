@@ -61,7 +61,7 @@ func makeCmdCreateDB() *CmdCreateDB {
 	createDBOptions.SQLFile = newCmd.parser.String("sql", "",
 		util.GetOptionalFlagMsg("SQL file to run (as dbadmin) immediately on database creation"))
 	createDBOptions.ConfigDirectory = newCmd.parser.String("config-directory", "",
-		util.GetOptionalFlagMsg("Directory where "+vclusterops.ConfigFileName+" is located"))
+		util.GetOptionalFlagMsg(DirWhr+vclusterops.ConfigFileName+Located))
 	createDBOptions.LogPath = newCmd.parser.String("log-path", "", "Directory where the log file will be generated")
 
 	// Eon flags

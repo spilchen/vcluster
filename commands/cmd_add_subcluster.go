@@ -37,6 +37,10 @@ type CmdAddSubcluster struct {
 	scHostListStr        *string
 }
 
+const flagMsgEonDBIndication = "indicate if the database is an Eon db."
+const TrustMsg = "Comma-separated list of hosts in database. Use it when you do not trust "
+const NotTrust = " Use it when you do not trust "
+
 func makeCmdAddSubcluster() *CmdAddSubcluster {
 	// CmdAddSubcluster
 	newCmd := &CmdAddSubcluster{}
@@ -51,8 +55,7 @@ func makeCmdAddSubcluster() *CmdAddSubcluster {
 
 	// optional flags
 	addSubclusterOptions.Password = newCmd.parser.String("password", "", util.GetOptionalFlagMsg("Database password in single quotes"))
-	newCmd.hostListStr = newCmd.parser.String("hosts", "", util.GetOptionalFlagMsg("Comma-separated list of hosts in database."+
-		" Use it when you do not trust "+vclusterops.ConfigFileName))
+	newCmd.hostListStr = newCmd.parser.String("hosts", "", util.GetOptionalFlagMsg(TrustMsg+vclusterops.ConfigFileName))
 	addSubclusterOptions.IsPrimary = newCmd.parser.Bool("is-primary", false,
 		util.GetOptionalFlagMsg("The new subcluster will be a primary subcluster"))
 	addSubclusterOptions.ControlSetSize = newCmd.parser.Int("control-set-size", vclusterops.ControlSetSizeDefaultValue,
@@ -60,14 +63,13 @@ func makeCmdAddSubcluster() *CmdAddSubcluster {
 	// new flags comparing to adminTools db_add_subcluster
 	newCmd.ipv6 = newCmd.parser.Bool("ipv6", false, util.GetOptionalFlagMsg("Add subcluster with IPv6 hosts"))
 	addSubclusterOptions.HonorUserInput = newCmd.parser.Bool("honor-user-input", false,
-		util.GetOptionalFlagMsg("Forcefully use the user's input instead of reading the options from "+vclusterops.ConfigFileName))
+		util.GetOptionalFlagMsg(flagMsg+vclusterops.ConfigFileName))
 	addSubclusterOptions.ConfigDirectory = newCmd.parser.String("config-directory", "",
-		util.GetOptionalFlagMsg("Directory where "+vclusterops.ConfigFileName+" is located"))
+		util.GetOptionalFlagMsg(DirWhr+vclusterops.ConfigFileName+Located))
 
 	// Eon flags
 	// isEon is target for early checking before VClusterOpEngine runs since add-subcluster is only supported in eon mode
-	newCmd.isEon = newCmd.parser.Bool("eon-mode", false, util.GetEonFlagMsg("indicate if the database is an Eon db."+
-		" Use it when you do not trust "+vclusterops.ConfigFileName))
+	newCmd.isEon = newCmd.parser.Bool("eon-mode", false, util.GetEonFlagMsg(flagMsgEonDBIndication+NotTrust+vclusterops.ConfigFileName))
 
 	// hidden options
 	// TODO implement these hidden options in db_add_subcluster, then move them to optional flags above

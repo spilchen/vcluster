@@ -45,7 +45,7 @@ func makeCmdConfig() *CmdConfig {
 		"directory",
 		"",
 		"The directory under which the config file was created. "+
-			"By default the current directory will be used.",
+			CurrDir,
 	)
 
 	return newCmd

@@ -25,6 +25,8 @@ import (
 	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
+const CommStorageLoc = "communal storage location is not specified for an eon database,"
+
 type VReIPOptions struct {
 	DatabaseOptions
 
@@ -141,7 +143,7 @@ func (vcc *VClusterCommands) VReIP(options *VReIPOptions) error {
 			// When communal storage location is missing, we only log a debug message
 			// because re-ip only fails in between revive_db and first start_db.
 			// We should not ran re-ip in that case because revive_db has already done the re-ip work.
-			vcc.Log.V(1).Info("communal storage location is not specified for an eon database," +
+			vcc.Log.V(1).Info(CommStorageLoc +
 				" re_ip after revive_db could fail because we cannot retrieve the correct database information")
 		}
 	}

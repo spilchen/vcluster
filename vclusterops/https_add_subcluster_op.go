@@ -24,6 +24,8 @@ import (
 	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
+const Subclstr = "subclusters/"
+
 type httpsAddSubclusterOp struct {
 	opBase
 	opHTTPSBase
@@ -82,7 +84,7 @@ func (op *httpsAddSubclusterOp) setupClusterHTTPRequest(hosts []string) error {
 	for _, host := range hosts {
 		httpRequest := hostHTTPRequest{}
 		httpRequest.Method = PostMethod
-		httpRequest.buildHTTPSEndpoint("subclusters/" + op.scName)
+		httpRequest.buildHTTPSEndpoint(Subclstr + op.scName)
 		if op.useHTTPPassword {
 			httpRequest.Password = op.httpsPassword
 			httpRequest.Username = op.userName

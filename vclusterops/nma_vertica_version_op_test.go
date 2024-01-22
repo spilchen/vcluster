@@ -23,6 +23,8 @@ import (
 	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
+const misMatchVer = "Found mismatched versions: "
+
 func TestLogCheckVersionMatch(t *testing.T) {
 	op := makeNMAVerticaVersionOp(vlog.Printer{}, nil, true, true)
 	op.HasIncomingSCNames = true
@@ -45,9 +47,9 @@ func TestLogCheckVersionMatch(t *testing.T) {
 	}
 	err = op.logCheckVersionMatch()
 	assert.Error(t, err)
-	expectedErr1 := "Found mismatched versions: " +
+	expectedErr1 := misMatchVer +
 		"[Vertica Analytic Database v24.1.0] and [Vertica Analytic Database v23.4.0] in subcluster [default_subcluster]"
-	expectedErr2 := "Found mismatched versions: " +
+	expectedErr2 := misMatchVer +
 		"[Vertica Analytic Database v23.4.0] and [Vertica Analytic Database v24.1.0] in subcluster [default_subcluster]"
 	isExpected := strings.Contains(err.Error(), expectedErr1) || strings.Contains(err.Error(), expectedErr2)
 	assert.Equal(t, true, isExpected)
@@ -91,9 +93,9 @@ func TestLogCheckVersionMatch(t *testing.T) {
 	}
 	err = op.logCheckVersionMatch()
 	assert.Error(t, err)
-	expectedErr1 = "Found mismatched versions: " +
+	expectedErr1 = misMatchVer +
 		"[Vertica Analytic Database v23.4.0] and [Vertica Analytic Database v23.3.0] in subcluster [sc2]"
-	expectedErr2 = "Found mismatched versions: " +
+	expectedErr2 = misMatchVer +
 		"[Vertica Analytic Database v23.3.0] and [Vertica Analytic Database v23.4.0] in subcluster [sc2]"
 	isExpected = strings.Contains(err.Error(), expectedErr1) || strings.Contains(err.Error(), expectedErr2)
 	assert.Equal(t, true, isExpected)

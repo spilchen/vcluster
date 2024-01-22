@@ -60,7 +60,7 @@ func (op *httpsReIPOp) setupClusterHTTPRequest(hosts []string) error {
 		if !ok {
 			return fmt.Errorf("[%s] cannot find node information for address %s", op.name, host)
 		}
-		httpRequest.buildHTTPSEndpoint("nodes/" + nodesInfo.NodeName + "/ip")
+		httpRequest.buildHTTPSEndpoint(Nodes + nodesInfo.NodeName + "/ip")
 		httpRequest.QueryParams = make(map[string]string)
 		httpRequest.QueryParams["host"] = nodesInfo.TargetAddress
 		httpRequest.QueryParams["control-host"] = nodesInfo.TargetControlAddress

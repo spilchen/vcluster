@@ -32,6 +32,8 @@ type httpsPollSubclusterNodeStateOp struct {
 	scName      string
 }
 
+const FmtMsg = "[%s] expect one node's information, but got %d nodes' information from NMA /v1/nodes/{node} endpoint on host %s"
+
 // This op is used to poll for nodes that are a part of the subcluster `scName` to be UP.
 // A default timeout value defined by StartupPollingTimeout is applied. The user can suggest
 // an alternate timeout through the env var NODE_STATE_POLLING_TIMEOUT
@@ -69,7 +71,7 @@ func (op *httpsPollSubclusterNodeStateOp) setupClusterHTTPRequest(hosts []string
 		httpRequest := hostHTTPRequest{}
 		httpRequest.Method = GetMethod
 		httpRequest.Timeout = httpRequestTimeoutSeconds
-		httpRequest.buildHTTPSEndpoint("nodes/" + host)
+		httpRequest.buildHTTPSEndpoint(Nodes + host)
 		if op.useHTTPPassword {
 			httpRequest.Password = op.httpsPassword
 			httpRequest.Username = op.userName
@@ -174,9 +176,7 @@ func (op *httpsPollSubclusterNodeStateOp) shouldStopPolling() (bool, error) {
 				}
 			} else {
 				// if NMA endpoint cannot function well on any of the hosts, we do not want to retry polling
-				return true, fmt.Errorf("[%s] expect one node's information, but got %d nodes' information"+
-					" from NMA /v1/nodes/{node} endpoint on host %s",
-					op.name, len(nodesInformation.NodeList), host)
+				return true, fmt.Errorf(FmtMsg, op.name, len(nodesInformation.NodeList), host)
 			}
 		}
 	}

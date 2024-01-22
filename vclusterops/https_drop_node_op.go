@@ -23,6 +23,8 @@ import (
 	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
+const Drop = "/drop"
+
 type httpsDropNodeOp struct {
 	opBase
 	opHTTPSBase
@@ -59,7 +61,7 @@ func (op *httpsDropNodeOp) setupClusterHTTPRequest(hosts []string) error {
 	for _, host := range hosts {
 		httpRequest := hostHTTPRequest{}
 		httpRequest.Method = PostMethod
-		httpRequest.buildHTTPSEndpoint("nodes/" + op.targetHost + "/drop")
+		httpRequest.buildHTTPSEndpoint(Nodes + op.targetHost + Drop)
 		if op.useHTTPPassword {
 			httpRequest.Password = op.httpsPassword
 			httpRequest.Username = op.userName

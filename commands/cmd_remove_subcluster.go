@@ -48,14 +48,13 @@ func makeCmdRemoveSubcluster() *CmdRemoveSubcluster {
 
 	// optional flags
 	removeScOptions.HonorUserInput = newCmd.parser.Bool("honor-user-input", false,
-		util.GetOptionalFlagMsg("Forcefully use the user's input instead of reading the options from "+vclusterops.ConfigFileName))
+		util.GetOptionalFlagMsg(flagMsg+vclusterops.ConfigFileName))
 	removeScOptions.Password = newCmd.parser.String("password", "", util.GetOptionalFlagMsg("Database password in single quotes"))
-	newCmd.hostListStr = newCmd.parser.String("hosts", "", util.GetOptionalFlagMsg("Comma-separated hosts that will initially be used"+
-		" to get cluster info from the db. Use it when you do not trust "+vclusterops.ConfigFileName))
+	newCmd.hostListStr = newCmd.parser.String("hosts", "", util.GetOptionalFlagMsg(CommaMsg+vclusterops.ConfigFileName))
 	removeScOptions.ConfigDirectory = newCmd.parser.String("config-directory", "",
-		util.GetOptionalFlagMsg("Directory where "+vclusterops.ConfigFileName+" is located"))
-	removeScOptions.ForceDelete = newCmd.parser.Bool("force-delete", true, util.GetOptionalFlagMsg("Whether force delete directories"+
-		" if they are not empty"))
+		util.GetOptionalFlagMsg(DirWhr+vclusterops.ConfigFileName+Located))
+	removeScOptions.ForceDelete = newCmd.parser.Bool("force-delete", true, util.GetOptionalFlagMsg(forceDeleteConfirmation+
+		ifTheyAreNotEmpty))
 	removeScOptions.DataPrefix = newCmd.parser.String("data-path", "", util.GetOptionalFlagMsg("Path of data directory"))
 	newCmd.ipv6 = newCmd.parser.Bool("ipv6", false, util.GetOptionalFlagMsg("Whether the hosts use IPv6 addresses"))
 

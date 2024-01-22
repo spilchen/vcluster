@@ -204,9 +204,8 @@ func ResolveToAbsPath(path string) (string, error) {
 		return homeDir, nil
 	} else if strings.HasPrefix(path, "~/") {
 		return filepath.Join(homeDir, path[2:]), nil
-	} else {
-		return "", fmt.Errorf("invalid path")
 	}
+	return "", fmt.Errorf("invalid path")
 }
 
 // IP util functions

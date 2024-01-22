@@ -10,6 +10,8 @@ import (
 	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
+const Secs = "seconds"
+
 /* CmdRestartNode
  *
  * Implements ClusterCommand interface
@@ -38,16 +40,16 @@ func makeCmdRestartNodes() *CmdRestartNodes {
 	// optional flags
 	restartNodesOptions.Password = newCmd.parser.String("password", "", util.GetOptionalFlagMsg("Database password in single quotes"))
 	newCmd.hostListStr = newCmd.parser.String("hosts", "", util.GetOptionalFlagMsg("Comma-separated hosts that participate in the database"+
-		" Use it when you do not trust "+vclusterops.ConfigFileName))
+		NotTrust+vclusterops.ConfigFileName))
 	newCmd.ipv6 = newCmd.parser.Bool("ipv6", false, "restart nodes with IPv6 hosts")
 
 	restartNodesOptions.HonorUserInput = newCmd.parser.Bool("honor-user-input", false,
 		util.GetOptionalFlagMsg("Forcefully use the user input instead of reading the options from "+vclusterops.ConfigFileName))
 	restartNodesOptions.ConfigDirectory = newCmd.parser.String("config-directory", "",
-		util.GetOptionalFlagMsg("Directory where "+vclusterops.ConfigFileName+" is located"))
+		util.GetOptionalFlagMsg(DirWhr+vclusterops.ConfigFileName+Located))
 	restartNodesOptions.StatePollingTimeout = *newCmd.parser.Int("timeout", util.DefaultTimeoutSeconds,
-		util.GetOptionalFlagMsg("Set a timeout (in seconds) for polling node state operation, default timeout is "+
-			strconv.Itoa(util.DefaultTimeoutSeconds)+"seconds"))
+		util.GetOptionalFlagMsg(setTimeOutMsg+
+			strconv.Itoa(util.DefaultTimeoutSeconds)+Secs))
 
 	newCmd.restartNodesOptions = &restartNodesOptions
 	newCmd.parser.Usage = func() {

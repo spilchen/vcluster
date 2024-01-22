@@ -91,10 +91,10 @@ func makeCmdScrutinize() *CmdScrutinize {
 		util.GetOptionalFlagMsg("Database username. Consider using single quotes to avoid shell substitution."))
 
 	newCmd.sOptions.HonorUserInput = newCmd.parser.Bool("honor-user-input", false,
-		util.GetOptionalFlagMsg("Forcefully use the user's input instead of reading the options from "+vclusterops.ConfigFileName))
+		util.GetOptionalFlagMsg(flagMsg+vclusterops.ConfigFileName))
 
 	newCmd.sOptions.ConfigDirectory = newCmd.parser.String("config-directory", "",
-		util.GetOptionalFlagMsg("Directory where "+vclusterops.ConfigFileName+" is located"))
+		util.GetOptionalFlagMsg(DirWhr+vclusterops.ConfigFileName+Located))
 
 	newCmd.ipv6 = newCmd.parser.Bool("ipv6", false, util.GetOptionalFlagMsg("Scrutinize database with IPv6 hosts"))
 

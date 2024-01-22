@@ -35,15 +35,14 @@ func makeCmdShowRestorePoints() *CmdShowRestorePoints {
 	// optional flags
 	newCmd.configurationParams = newCmd.parser.String("config-param", "", util.GetOptionalFlagMsg(
 		"Comma-separated list of NAME=VALUE pairs for configuration parameters"))
-	newCmd.hostListStr = newCmd.parser.String("hosts", "", util.GetOptionalFlagMsg("Comma-separated list of hosts to participate in database."+
-		" Use it when you do not trust "+vclusterops.ConfigFileName))
+	newCmd.hostListStr = newCmd.parser.String("hosts", "", util.GetOptionalFlagMsg(commaSeparatedLog+NotTrust+vclusterops.ConfigFileName))
 	newCmd.ipv6 = newCmd.parser.Bool("ipv6", false, "Whether the database hosts use IPv6 addresses")
 
 	showRestorePointsOptions.Password = newCmd.parser.String("password", "", util.GetOptionalFlagMsg("Database password in single quotes"))
 	showRestorePointsOptions.HonorUserInput = newCmd.parser.Bool("honor-user-input", false,
-		util.GetOptionalFlagMsg("Forcefully use the user's input instead of reading the options from "+vclusterops.ConfigFileName))
+		util.GetOptionalFlagMsg(flagMsg+vclusterops.ConfigFileName))
 	showRestorePointsOptions.ConfigDirectory = newCmd.parser.String("config-directory", "",
-		util.GetOptionalFlagMsg("Directory where "+vclusterops.ConfigFileName+" is located"))
+		util.GetOptionalFlagMsg(DirWhr+vclusterops.ConfigFileName+Located))
 
 	newCmd.showRestorePointsOptions = &showRestorePointsOptions
 

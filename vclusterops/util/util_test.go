@@ -26,6 +26,8 @@ import (
 	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
+const invalDB = "invalid character in database"
+
 type NMAHealthOpResponse map[string]string
 
 func redirectLog() (*bytes.Buffer, vlog.Printer) {
@@ -252,13 +254,13 @@ func TestValidateDBName(t *testing.T) {
 
 	// negative cases
 	err = ValidateName("test$db", obj)
-	assert.ErrorContains(t, err, "invalid character in "+obj+" name: $")
+	assert.ErrorContains(t, err, invalDB+" name: $")
 
 	err = ValidateName("[db1]", obj)
-	assert.ErrorContains(t, err, "invalid character in "+obj+" name: [")
+	assert.ErrorContains(t, err, invalDB+" name: [")
 
 	err = ValidateName("!!??!!db1", obj)
-	assert.ErrorContains(t, err, "invalid character in "+obj+" name: !")
+	assert.ErrorContains(t, err, invalDB+" name: !")
 }
 
 func TestSetOptFlagHelpMsg(t *testing.T) {

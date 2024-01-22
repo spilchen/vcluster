@@ -53,13 +53,12 @@ func makeCmdUnsandboxSubcluster() *CmdUnsandboxSubcluster {
 	// optional flags
 	newCmd.usOptions.Password = newCmd.parser.String("password", "",
 		util.GetOptionalFlagMsg("Database password. Consider using in single quotes to avoid shell substitution."))
-	newCmd.hostListStr = newCmd.parser.String("hosts", "", util.GetOptionalFlagMsg("Comma-separated list of hosts to participate in database."+
-		" Use it when you do not trust "+vclusterops.ConfigFileName))
+	newCmd.hostListStr = newCmd.parser.String("hosts", "", util.GetOptionalFlagMsg(commaSeparatedLog+NotTrust+vclusterops.ConfigFileName))
 	newCmd.ipv6 = newCmd.parser.Bool("ipv6", false, "start database with with IPv6 hosts")
 	newCmd.usOptions.HonorUserInput = newCmd.parser.Bool("honor-user-input", false,
-		util.GetOptionalFlagMsg("Forcefully use the user's input instead of reading the options from "+vclusterops.ConfigFileName))
+		util.GetOptionalFlagMsg(flagMsg+vclusterops.ConfigFileName))
 	newCmd.usOptions.ConfigDirectory = newCmd.parser.String("config-directory", "",
-		util.GetOptionalFlagMsg("Directory where "+vclusterops.ConfigFileName+" is located"))
+		util.GetOptionalFlagMsg(DirWhr+vclusterops.ConfigFileName+Located))
 
 	return newCmd
 }
@@ -94,7 +93,7 @@ func (c *CmdUnsandboxSubcluster) Analyze(logger vlog.Printer) error {
 
 func (c *CmdUnsandboxSubcluster) Run(vcc vclusterops.VClusterCommands) error {
 	vcc.Log.PrintInfo("Running unsandbox subcluster")
-	vcc.Log.Info("Calling method Run() for command " + c.CommandType())
+	vcc.Log.Info(runCommandMsg + c.CommandType())
 
 	options := c.usOptions
 	// get config from vertica_cluster.yaml
@@ -104,6 +103,6 @@ func (c *CmdUnsandboxSubcluster) Run(vcc vclusterops.VClusterCommands) error {
 	}
 	options.Config = config
 	err = vcc.VUnsandbox(&options)
-	vcc.Log.PrintInfo("Completed method Run() for command " + c.CommandType())
+	vcc.Log.PrintInfo(CompRun + c.CommandType())
 	return err
 }

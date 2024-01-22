@@ -35,6 +35,9 @@ type CmdRemoveNode struct {
 	CmdBase
 }
 
+const forceDeleteConfirmation = "Whether force delete directories"
+const ifTheyAreNotEmpty = " if they are not empty"
+
 func makeCmdRemoveNode() *CmdRemoveNode {
 	// CmdRemoveNode
 	newCmd := &CmdRemoveNode{}
@@ -49,14 +52,13 @@ func makeCmdRemoveNode() *CmdRemoveNode {
 
 	// optional flags
 	removeNodeOptions.HonorUserInput = newCmd.parser.Bool("honor-user-input", false,
-		util.GetOptionalFlagMsg("Forcefully use the user's input instead of reading the options from "+vclusterops.ConfigFileName))
+		util.GetOptionalFlagMsg(flagMsg+vclusterops.ConfigFileName))
 	removeNodeOptions.Password = newCmd.parser.String("password", "", util.GetOptionalFlagMsg("Database password in single quotes"))
-	newCmd.hostListStr = newCmd.parser.String("hosts", "", util.GetOptionalFlagMsg("Comma-separated hosts that will initially be used"+
-		" to get cluster info from the db. Use it when you do not trust "+vclusterops.ConfigFileName))
+	newCmd.hostListStr = newCmd.parser.String("hosts", "", util.GetOptionalFlagMsg(CommaMsg+vclusterops.ConfigFileName))
 	removeNodeOptions.ConfigDirectory = newCmd.parser.String("config-directory", "",
-		util.GetOptionalFlagMsg("Directory where "+vclusterops.ConfigFileName+" is located"))
-	removeNodeOptions.ForceDelete = newCmd.parser.Bool("force-delete", true, util.GetOptionalFlagMsg("Whether force delete directories"+
-		" if they are not empty"))
+		util.GetOptionalFlagMsg(DirWhr+vclusterops.ConfigFileName+Located))
+	removeNodeOptions.ForceDelete = newCmd.parser.Bool("force-delete", true, util.GetOptionalFlagMsg(forceDeleteConfirmation+
+		ifTheyAreNotEmpty))
 	removeNodeOptions.DataPrefix = newCmd.parser.String("data-path", "", util.GetOptionalFlagMsg("Path of data directory"))
 	newCmd.ipv6 = newCmd.parser.Bool("ipv6", false, util.GetOptionalFlagMsg("Whether the hosts use IPv6 addresses"))
 

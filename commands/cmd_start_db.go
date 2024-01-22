@@ -26,6 +26,8 @@ type CmdStartDB struct {
 	configurationParams *string // raw input from user, need further processing
 }
 
+const setTimeOutMsg = "Set a timeout (in seconds) for polling node state operation, default timeout is "
+
 func makeCmdStartDB() *CmdStartDB {
 	// CmdStartDB
 	newCmd := &CmdStartDB{}
@@ -36,25 +38,24 @@ func makeCmdStartDB() *CmdStartDB {
 
 	// require flags
 	startDBOptions.DBName = newCmd.parser.String("db-name", "", util.GetOptionalFlagMsg("The name of the database to be started."+
-		" Use it when you do not trust "+vclusterops.ConfigFileName))
+		NotTrust+vclusterops.ConfigFileName))
 
 	// optional flags
 	startDBOptions.Password = newCmd.parser.String("password", "", util.GetOptionalFlagMsg("Database password in single quotes"))
 	startDBOptions.CatalogPrefix = newCmd.parser.String("catalog-path", "", "The catalog path of the database")
-	newCmd.hostListStr = newCmd.parser.String("hosts", "", util.GetOptionalFlagMsg("Comma-separated list of hosts to participate in database."+
-		" Use it when you do not trust "+vclusterops.ConfigFileName))
+	newCmd.hostListStr = newCmd.parser.String("hosts", "", util.GetOptionalFlagMsg(commaSeparatedLog+NotTrust+vclusterops.ConfigFileName))
 	newCmd.ipv6 = newCmd.parser.Bool("ipv6", false, "start database with with IPv6 hosts")
 
 	startDBOptions.HonorUserInput = newCmd.parser.Bool("honor-user-input", false,
-		util.GetOptionalFlagMsg("Forcefully use the user's input instead of reading the options from "+vclusterops.ConfigFileName))
+		util.GetOptionalFlagMsg(flagMsg+vclusterops.ConfigFileName))
 	startDBOptions.ConfigDirectory = newCmd.parser.String("config-directory", "",
-		util.GetOptionalFlagMsg("Directory where "+vclusterops.ConfigFileName+" is located"))
+		util.GetOptionalFlagMsg(DirWhr+vclusterops.ConfigFileName+Located))
 	startDBOptions.StatePollingTimeout = newCmd.parser.Int("timeout", util.DefaultTimeoutSeconds,
-		util.GetOptionalFlagMsg("Set a timeout (in seconds) for polling node state operation, default timeout is "+
-			strconv.Itoa(util.DefaultTimeoutSeconds)+"seconds"))
+		util.GetOptionalFlagMsg(setTimeOutMsg+
+			strconv.Itoa(util.DefaultTimeoutSeconds)+Secs))
 	// eon flags
 	newCmd.isEon = newCmd.parser.Bool("eon-mode", false, util.GetEonFlagMsg("Indicate if the database is an Eon database."+
-		" Use it when you do not trust "+vclusterops.ConfigFileName))
+		NotTrust+vclusterops.ConfigFileName))
 	startDBOptions.CommunalStorageLocation = newCmd.parser.String("communal-storage-location", "",
 		util.GetEonFlagMsg("Location of communal storage"))
 	newCmd.configurationParams = newCmd.parser.String("config-param", "", util.GetOptionalFlagMsg(

@@ -39,6 +39,11 @@ type CmdAddNode struct {
 	CmdBase
 }
 
+const flagMsg = "Forcefully use the user's input instead of reading the options from "
+const CommaMsg = "Comma-separated hosts that will initially be used to get cluster info from the db. Use it when you do not trust "
+const Located = " is located"
+const DirWhr = "Directory where "
+
 func makeCmdAddNode() *CmdAddNode {
 	// CmdAddNode
 	newCmd := &CmdAddNode{}
@@ -53,12 +58,12 @@ func makeCmdAddNode() *CmdAddNode {
 
 	// optional flags
 	addNodeOptions.HonorUserInput = newCmd.parser.Bool("honor-user-input", false,
-		util.GetOptionalFlagMsg("Forcefully use the user's input instead of reading the options from "+vclusterops.ConfigFileName))
+		util.GetOptionalFlagMsg(flagMsg+vclusterops.ConfigFileName))
 	addNodeOptions.Password = newCmd.parser.String("password", "", util.GetOptionalFlagMsg("Database password in single quotes"))
-	newCmd.hostListStr = newCmd.parser.String("hosts", "", util.GetOptionalFlagMsg("Comma-separated hosts that will initially be used"+
+	newCmd.hostListStr = newCmd.parser.String("hosts", "", util.GetOptionalFlagMsg(CommaMsg+
 		" to get cluster info from the database. Use it when you do not trust "+vclusterops.ConfigFileName))
 	addNodeOptions.ConfigDirectory = newCmd.parser.String("config-directory", "",
-		util.GetOptionalFlagMsg("Directory where "+vclusterops.ConfigFileName+" is located"))
+		util.GetOptionalFlagMsg(DirWhr+vclusterops.ConfigFileName+Located))
 	addNodeOptions.DataPrefix = newCmd.parser.String("data-path", "", util.GetOptionalFlagMsg("Path of data directory"))
 	addNodeOptions.ForceRemoval = newCmd.parser.Bool("force-removal", false,
 		util.GetOptionalFlagMsg("Force removal of existing directories before adding nodes"))

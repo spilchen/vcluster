@@ -157,7 +157,7 @@ func (vcc *VClusterCommands) VStartDatabase(options *VStartDatabaseOptions) erro
 		} else {
 			// When communal storage location is missing, we only log a warning message
 			// because fail to read cluster_config.json will not affect start_db in most of the cases.
-			vcc.Log.PrintWarning("communal storage location is not specified for an eon database," +
+			vcc.Log.PrintWarning(CommStorageLoc +
 				" first start_db after revive_db could fail because we cannot retrieve the correct database information\n")
 		}
 	}

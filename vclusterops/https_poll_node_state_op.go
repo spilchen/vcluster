@@ -109,7 +109,7 @@ func (op *httpsPollNodeStateOp) setupClusterHTTPRequest(hosts []string) error {
 		httpRequest := hostHTTPRequest{}
 		httpRequest.Method = GetMethod
 		httpRequest.Timeout = httpRequestTimeoutSeconds
-		httpRequest.buildHTTPSEndpoint("nodes/" + host)
+		httpRequest.buildHTTPSEndpoint(Nodes + host)
 		if op.useHTTPPassword {
 			httpRequest.Password = op.httpsPassword
 			httpRequest.Username = op.userName
@@ -198,9 +198,7 @@ func (op *httpsPollNodeStateOp) shouldStopPolling() (bool, error) {
 				}
 			} else {
 				// if NMA endpoint cannot function well on any of the hosts, we do not want to retry polling
-				return true, fmt.Errorf("[%s] expect one node's information, but got %d nodes' information"+
-					" from NMA /v1/nodes/{node} endpoint on host %s",
-					op.name, len(nodesInformation.NodeList), host)
+				return true, fmt.Errorf(FmtMsg, op.name, len(nodesInformation.NodeList), host)
 			}
 		}
 	}

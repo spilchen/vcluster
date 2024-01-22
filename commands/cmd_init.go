@@ -27,6 +27,8 @@ import (
 	"github.com/vertica/vcluster/vclusterops/vlog"
 )
 
+const CurrDir = "By default the current directory will be used."
+
 /* CmdInit
  *
  * A command creating the YAML config file "vertica_cluster.yaml"
@@ -47,7 +49,7 @@ func makeCmdInit() *CmdInit {
 		"directory",
 		"",
 		"The directory under which the config file will be created. "+
-			"By default the current directory will be used.",
+			CurrDir,
 	)
 	newCmd.DBName = newCmd.parser.String("db-name", "", "Database name")
 	newCmd.Hosts = newCmd.parser.String("hosts", "", "Comma-separated list of hosts to participate in database")

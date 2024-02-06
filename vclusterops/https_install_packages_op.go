@@ -16,6 +16,7 @@
 package vclusterops
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -26,15 +27,23 @@ import (
 type httpsInstallPackagesOp struct {
 	opBase
 	opHTTPSBase
+	forceReinstall bool
+}
+
+// installPackagesRequestData are the parameters that we pass along to
+// the HTTP endpoint.
+type installPackagesRequestData struct {
+	ForceInstall bool `json:"force-install"`
 }
 
 func makeHTTPSInstallPackagesOp(logger vlog.Printer, hosts []string, useHTTPPassword bool,
-	userName string, httpsPassword *string,
+	userName string, httpsPassword *string, forceReinstall bool,
 ) (httpsInstallPackagesOp, error) {
 	op := httpsInstallPackagesOp{}
 	op.name = "HTTPSInstallPackagesOp"
 	op.logger = logger.WithName(op.name)
 	op.hosts = hosts
+	op.forceReinstall = forceReinstall
 
 	err := util.ValidateUsernameAndPassword(op.name, useHTTPPassword, userName)
 	if err != nil {
@@ -48,6 +57,11 @@ func makeHTTPSInstallPackagesOp(logger vlog.Printer, hosts []string, useHTTPPass
 
 func (op *httpsInstallPackagesOp) setupClusterHTTPRequest(hosts []string) error {
 	for _, host := range hosts {
+		reqData, err := op.buildRequestData()
+		if err != nil {
+			return err
+		}
+
 		httpRequest := hostHTTPRequest{}
 		httpRequest.Method = PostMethod
 		httpRequest.buildHTTPSEndpoint("packages")
@@ -55,13 +69,34 @@ func (op *httpsInstallPackagesOp) setupClusterHTTPRequest(hosts []string) error 
 			httpRequest.Password = op.httpsPassword
 			httpRequest.Username = op.userName
 		}
+		httpRequest.RequestData = reqData
 		op.clusterHTTPRequest.RequestCollection[host] = httpRequest
 	}
 
 	return nil
 }
 
+func (op *httpsInstallPackagesOp) buildRequestData() (string, error) {
+	data := installPackagesRequestData{
+		ForceInstall: op.forceReinstall,
+	}
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		op.logger.Error(err, `[%s] fail to marshal request data to JSON string`, op.name)
+		return "", err
+	}
+	return string(dataBytes), nil
+}
+
 func (op *httpsInstallPackagesOp) prepare(execContext *opEngineExecContext) error {
+	// If no hosts passed in, we will find the hosts from execute-context
+	if len(op.hosts) == 0 {
+		if len(execContext.upHosts) == 0 {
+			return fmt.Errorf(`[%s] Cannot find any up hosts in OpEngineExecContext`, op.name)
+		}
+		// use first up host to execute https post request
+		op.hosts = []string{execContext.upHosts[0]}
+	}
 	execContext.dispatcher.setup(op.hosts)
 
 	return op.setupClusterHTTPRequest(op.hosts)

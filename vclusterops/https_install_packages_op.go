@@ -16,9 +16,9 @@
 package vclusterops
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/vertica/vcluster/vclusterops/util"
 	"github.com/vertica/vcluster/vclusterops/vlog"
@@ -28,12 +28,6 @@ type httpsInstallPackagesOp struct {
 	opBase
 	opHTTPSBase
 	forceReinstall bool
-}
-
-// installPackagesRequestData are the parameters that we pass along to
-// the HTTP endpoint.
-type installPackagesRequestData struct {
-	ForceInstall bool `json:"force-install"`
 }
 
 func makeHTTPSInstallPackagesOp(logger vlog.Printer, hosts []string, useHTTPPassword bool,
@@ -57,11 +51,6 @@ func makeHTTPSInstallPackagesOp(logger vlog.Printer, hosts []string, useHTTPPass
 
 func (op *httpsInstallPackagesOp) setupClusterHTTPRequest(hosts []string) error {
 	for _, host := range hosts {
-		reqData, err := op.buildRequestData()
-		if err != nil {
-			return err
-		}
-
 		httpRequest := hostHTTPRequest{}
 		httpRequest.Method = PostMethod
 		httpRequest.buildHTTPSEndpoint("packages")
@@ -69,23 +58,13 @@ func (op *httpsInstallPackagesOp) setupClusterHTTPRequest(hosts []string) error 
 			httpRequest.Password = op.httpsPassword
 			httpRequest.Username = op.userName
 		}
-		httpRequest.RequestData = reqData
+		httpRequest.QueryParams = map[string]string{
+			"force-install": strconv.FormatBool(op.forceReinstall),
+		}
 		op.clusterHTTPRequest.RequestCollection[host] = httpRequest
 	}
 
 	return nil
-}
-
-func (op *httpsInstallPackagesOp) buildRequestData() (string, error) {
-	data := installPackagesRequestData{
-		ForceInstall: op.forceReinstall,
-	}
-	dataBytes, err := json.Marshal(data)
-	if err != nil {
-		op.logger.Error(err, `[%s] fail to marshal request data to JSON string`, op.name)
-		return "", err
-	}
-	return string(dataBytes), nil
 }
 
 func (op *httpsInstallPackagesOp) prepare(execContext *opEngineExecContext) error {

@@ -154,6 +154,7 @@ func (op *httpsCheckSubclusterSandboxOp) processResult(execContext *opEngineExec
 		// Just need one up host from the existing sandbox
 		// This will be used to add new subcluster to an existing sandbox
 		execContext.upHostsToSandboxes[host] = sb
+		op.logger.Info("SPILLY - 1 - Picking this host to be involved in sandbox", "host", host, "sb", sb)
 		break
 	}
 
@@ -161,23 +162,33 @@ func (op *httpsCheckSubclusterSandboxOp) processResult(execContext *opEngineExec
 		if _, exists := keysToRemove[host]; !exists {
 			// Just one up host from main cluster
 			execContext.upHostsToSandboxes[host] = sb
+			op.logger.Info("SPILLY - 2 - Picking this host to be involved in sandbox", "host", host, "sb", sb)
 			break
 		}
 	}
 	return allErrs
 }
+
 func (op *httpsCheckSubclusterSandboxOp) processScInfo(scInfo subclusterSandboxInfo,
 	execContext *opEngineExecContext) (mainClusterHosts, existingSandboxedHosts map[string]string, keysToRemove map[string]struct{}) {
 	keysToRemove = make(map[string]struct{})
 	mainClusterHosts = make(map[string]string)
+	// SPILLY - we are given scInfo - say s3
 	op.logger.Info("SPILLY processing scInfo", "scInfo", scInfo)
+	// SPILLY - iterate through all up subclusters
 	for host, sc := range execContext.upScInfo {
+		// SPILLY - we hit all pods. Two from sc3, one from sc4, 3 from sc1. We
+		// skip the nodes that are down that we want to sandbox. They have already shutdown prior.
 		op.logger.Info("SPILLY processing upScInfo", "host", host, "sc", sc)
 		if scInfo.Sandbox != "" && scInfo.SCName == sc {
 			keysToRemove, existingSandboxedHosts = op.processSandboxedSCInfo(scInfo, sc, host)
 			op.logger.Info("SPILLY called processSandboxedSCInfo", "host", host, "sc", sc,
 				"keysToRemove", keysToRemove, "existingSandboxedHosts", existingSandboxedHosts)
 		} else {
+			// SPILLY interesting, we are claiming that sc3 is not part of a
+			// sandbox. So, we end up assuming those hosts that we want to
+			// sandbox are part of the main cluster. Maybe they still are. But
+			// they aren't up, so I'm not sure why they are involved.
 			if scInfo.SCName == sc {
 				mainClusterHosts[host] = scInfo.Sandbox
 			}

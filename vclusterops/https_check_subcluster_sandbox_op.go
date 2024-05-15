@@ -200,7 +200,7 @@ func (op *httpsCheckSubclusterSandboxOp) processScInfo(scInfo subclusterSandboxI
 	}
 	op.logger.Info("SPILLY processed subcluster sandbox info", "scInfo", scInfo, "mainClusterHosts", mainClusterHosts,
 		"keysToRemove", keysToRemove, "existingSandboxedHosts", existingSandboxedHosts)
-	return
+	return //nolint:nakedret
 }
 
 func (op *httpsCheckSubclusterSandboxOp) processSandboxedSCInfo(scInfo subclusterSandboxInfo,

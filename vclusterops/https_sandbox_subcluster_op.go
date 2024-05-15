@@ -93,6 +93,7 @@ func (op *httpsSandboxingOp) prepare(execContext *opEngineExecContext) error {
 		}
 	}
 	hosts = append(hosts, mainHost)
+	op.logger.Info("SPILLY adjusted host list", "hosts", hosts, "mainHost", mainHost)
 	err := op.setupRequestBody()
 	if err != nil {
 		return err

@@ -173,6 +173,8 @@ func (op *httpsCheckSubclusterSandboxOp) processScInfo(scInfo subclusterSandboxI
 	for host, sc := range execContext.upScInfo {
 		if scInfo.Sandbox != "" && scInfo.SCName == sc {
 			keysToRemove, existingSandboxedHosts = op.processSandboxedSCInfo(scInfo, sc, host)
+			op.logger.Info("SPILLY called processSandboxedSCInfo", "host", host, "sc", sc,
+				"keysToRemove", keysToRemove, "existingSandboxedHosts", existingSandboxedHosts)
 		} else {
 			if scInfo.SCName == sc {
 				mainClusterHosts[host] = scInfo.Sandbox
@@ -183,6 +185,8 @@ func (op *httpsCheckSubclusterSandboxOp) processScInfo(scInfo subclusterSandboxI
 			}
 		}
 	}
+	op.logger.Info("SPILLY processed subcluster sandbox info", "mainClusterHosts", mainClusterHosts,
+		"keysToRemove", keysToRemove, "existingSandboxedHosts", existingSandboxedHosts)
 	return
 }
 

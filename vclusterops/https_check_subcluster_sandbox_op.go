@@ -170,7 +170,9 @@ func (op *httpsCheckSubclusterSandboxOp) processScInfo(scInfo subclusterSandboxI
 	execContext *opEngineExecContext) (mainClusterHosts, existingSandboxedHosts map[string]string, keysToRemove map[string]struct{}) {
 	keysToRemove = make(map[string]struct{})
 	mainClusterHosts = make(map[string]string)
+	op.logger.Info("SPILLY processing scInfo", "scInfo", scInfo)
 	for host, sc := range execContext.upScInfo {
+		op.logger.Info("SPILLY processing upScInfo", "host", host, "sc", sc)
 		if scInfo.Sandbox != "" && scInfo.SCName == sc {
 			keysToRemove, existingSandboxedHosts = op.processSandboxedSCInfo(scInfo, sc, host)
 			op.logger.Info("SPILLY called processSandboxedSCInfo", "host", host, "sc", sc,
@@ -185,7 +187,7 @@ func (op *httpsCheckSubclusterSandboxOp) processScInfo(scInfo subclusterSandboxI
 			}
 		}
 	}
-	op.logger.Info("SPILLY processed subcluster sandbox info", "mainClusterHosts", mainClusterHosts,
+	op.logger.Info("SPILLY processed subcluster sandbox info", "scInfo", scInfo, "mainClusterHosts", mainClusterHosts,
 		"keysToRemove", keysToRemove, "existingSandboxedHosts", existingSandboxedHosts)
 	return
 }
